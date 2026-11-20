@@ -743,7 +743,6 @@ async function onnxStep(){
    await onnxAcceptPosition(result.placement,result.orientation,result.occupancy);
   }catch(e){console.error(e);msg('ONNX inference error: '+e.message)}
   finally{onnxBusy=false;}
- }catch(e){console.error(e);msg('ONNX inference error: '+e.message)}finally{onnxBusy=false;}
 }
 
 /* ---------- state machine ---------- */
