@@ -759,15 +759,16 @@ function detectByContours(){
   src=cv.imread(W);gray=new cv.Mat();blur=new cv.Mat();edges=new cv.Mat();
   cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
   cv.GaussianBlur(gray,blur,new cv.Size(5,5),0);
-  cv.Canny(blur,edges,45,125);
+  cv.Canny(blur,edges,35,110);
   contours=new cv.MatVector();hierarchy=new cv.Mat();
   cv.findContours(edges,contours,hierarchy,cv.RETR_LIST,cv.CHAIN_APPROX_SIMPLE);
   let winner=null,bestArea=0;
   for(let i=0;i<contours.size();i++){
    const c=contours.get(i),area=cv.contourArea(c);
-   if(area< W.width*W.height*.06 ||area>W.width*W.height*.93){c.delete();continue}
+   // Accept boards that occupy a smaller or nearly full camera frame.
+   if(area< W.width*W.height*.035 ||area>W.width*W.height*.97){c.delete();continue}
    const peri=cv.arcLength(c,true),poly=new cv.Mat();
-   cv.approxPolyDP(c,poly,.025*peri,true);
+   cv.approxPolyDP(c,poly,.03*peri,true);
    if(poly.rows===4&&cv.isContourConvex(poly)){
     const p=[];for(let j=0;j<4;j++)p.push([poly.data32S[j*2],poly.data32S[j*2+1]]);
     const cx=p.reduce((a,x)=>a+x[0],0)/4,cy=p.reduce((a,x)=>a+x[1],0)/4;
@@ -786,7 +787,7 @@ function detectByContours(){
     }
     if(valid&&lights.length===32&&darks.length===32){
      const contrast=Math.abs(lights.reduce((a,b)=>a+b,0)/32-darks.reduce((a,b)=>a+b,0)/32);
-     if(contrast>12&&area>bestArea){bestArea=area;winner=ordered.map(p=>[p[0]/sc,p[1]/sc])}
+     if(contrast>7&&area>bestArea){bestArea=area;winner=ordered.map(p=>[p[0]/sc,p[1]/sc])}
     }
    }
    poly.delete();c.delete();
@@ -816,15 +817,16 @@ function validBoardSquares(c){
   const even=[],odd=[];
   for(let r=0;r<8;r++)for(let f=0;f<8;f++)(((r+f)&1)?odd:even).push(values[r*8+f]);
   const contrast=Math.abs(med(even)-med(odd));
-  if(contrast<11)return false;
+  // Webcams often produce low contrast or unevenly lit squares.
+  if(contrast<6.5)return false;
   const direction=Math.sign(med(even)-med(odd));
   let consistent=0;
   const middle=(med(even)+med(odd))/2;
   for(let r=0;r<8;r++)for(let f=0;f<8;f++){
    const expected=((r+f)&1)?-direction:direction;
-   if((values[r*8+f]-middle)*expected>2)consistent++;
+   if((values[r*8+f]-middle)*expected>1)consistent++;
   }
-  return consistent>=49; // allow some shadows and square-color variation
+  return consistent>=42; // tolerate shadows, glare and a few obscured squares
  }catch(e){return false}
 }
 let searchAttempt=0;
@@ -835,7 +837,7 @@ function searchStep(){
  if(c&&!validBoardSquares(c))c=null;
  if(!c){c=detect();if(c&&!validBoardSquares(c))c=null}
  if(c){
-  const stable=lastQ&&c.reduce((sum,p,i)=>sum+Math.hypot(p[0]-lastQ[i][0],p[1]-lastQ[i][1]),0)/4<O.width*.035;
+  const stable=lastQ&&c.reduce((sum,p,i)=>sum+Math.hypot(p[0]-lastQ[i][0],p[1]-lastQ[i][1]),0)/4<O.width*.05;
   found=stable?found+1:1;
   lastQ=c.map(p=>p.slice());quad=c.map(p=>p.slice());
   prog(Math.min(1,found/2));
