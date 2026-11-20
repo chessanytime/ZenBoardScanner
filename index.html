@@ -417,7 +417,7 @@ async function downloadOnnxMoveImages(){
  const zip=new JSZip(),folder=zip.folder('onnx_move_images'),refs=zip.folder('starting_piece_references');
  onnxMoveImages.forEach(item=>folder.file(item.name,item.data,{base64:true}));
  onnxPieceReferences.forEach(item=>refs.file(item.name,item.data,{base64:true}));
- folder.file('move_index.txt',onnxMoveImages.map((item,i)=>(i+1)+'. '+item.san+' | '+item.timestamp+' | '+item.fen+' | '+item.name).join('\n'));
+ folder.file('move_index.txt',onnxMoveImages.map((item,i)=>(i+1)+'. '+(item.san||'board-change')+' | '+item.timestamp+' | '+(item.fen||item.placement||'')+' | ply '+(item.ply??'')+' | '+item.name).join('\n'));
  refs.file('reference_index.txt',onnxPieceReferences.map(item=>item.name+' | '+item.color+' '+item.type+' | '+item.square+' | '+item.capturedAt).join('\n'));
  try{const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='onnx_game_images_'+timestampFileStamp()+'.zip';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);msg('Downloaded '+onnxMoveImages.length+' move images and '+onnxPieceReferences.length+' starting-piece references.')}
  catch(e){console.error(e);msg('Could not create the image ZIP: '+e.message)}
