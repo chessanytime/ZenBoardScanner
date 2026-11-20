@@ -50,6 +50,7 @@ small{color:var(--mut)}
 <div id="stage"><video id="v" playsinline muted autoplay></video><canvas id="ov"></canvas></div>
 <div class="row" id="zoomControls" style="justify-content:center;margin:8px 0"><button type="button" id="zoomOut" disabled>Zoom −</button><button type="button" id="zoomIn" disabled>Zoom +</button></div>
 <div class="row" id="borderControls" style="justify-content:center;margin:6px 0"><button type="button" id="adjustBorder">Adjust board border</button><button type="button" id="b3">Lock border now</button></div>
+<div class="row" id="verifyInitialControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="verifyInitialPieces"><strong>Verify starting pieces</strong></label><select id="verifyInitialPieces" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="no" selected>No</option><option value="yes">Yes</option></select></div>
 <div class="row" id="autoResolveControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="autoResolveChoice"><strong>Auto resolver</strong></label><select id="autoResolveChoice" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="yes" selected>Yes</option><option value="no">No</option></select></div>
 <div id="msg">Loading the scanner and requesting camera access. Keep the full chessboard and all 4 corners in view.</div>
 <div id="barw"><div id="bar"></div></div>
@@ -496,8 +497,21 @@ $('cancelConflictMove').onclick=()=>{const photo=latestFlatPixels?new Uint8Clamp
 async function onnxAcceptPosition(placement,orientation,occupancy){
  onnxLastOrientation=orientation;
  if(!game){
-  // Standard start verification uses occupied/empty squares only, not piece identities.
-  if(occupancy===placementOccupancy(STD_START))placement=STD_START;
+  // By default, a standard start is accepted from occupied/empty squares only.
+  // Optional strict mode also requires every piece identity and colour to match.
+  if(occupancy===placementOccupancy(STD_START)){
+   const verifyPieces=$('verifyInitialPieces').value==='yes';
+   if(verifyPieces&&placement!==STD_START){
+    onnxInitialPending=placement;
+    $('initialCustomStart').style.display='inline-block';
+    drawOnnxPlacement(placement);
+    const issues=initialPositionProblems(placement);
+    msg('Starting squares match, but piece verification found a mismatch: '+issues.slice(0,3).join(' ')+' Correct the board and wait for another scan, or use the detected board as a custom starting position.');
+    st(3,'piece verification needs attention','bad');
+    return;
+   }
+   placement=STD_START;
+  }
   $('initialCustomStart').style.display='none';
   drawOnnxPlacement(placement);
   if(placement===STD_START){
