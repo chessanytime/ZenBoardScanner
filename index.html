@@ -49,6 +49,7 @@ small{color:var(--mut)}
 <section style="border:1px solid #8fa0ad55;border-radius:10px;padding:10px;margin:10px 0;background:var(--card)"><strong>ONNX board recognition</strong><div class="row"><input type="file" id="onnxFile" accept=".onnx" style="min-width:180px;flex:1"><input type="url" id="onnxUrl" value="https://huggingface.co/joelseytre/chessq-lite/resolve/fa83b74862c96c137f59ab4d11ed9431a8efbad5/cq-vit-s-644-v5-seed1-onnx-int8-r1.onnx" placeholder="ONNX model URL" style="min-width:180px;flex:1"><button type="button" id="loadOnnx">Load from internet</button></div><small id="onnxStatus">Choose a local .onnx file or load the prefilled ChessQueries Lite model from the internet. ONNX reads the standard starting position directly; no empty-board calibration is required.</small><button type="button" id="initialCustomStart">Use detected board as a custom starting position</button></section>
 <div id="stage"><video id="v" playsinline muted autoplay></video><canvas id="ov"></canvas></div>
 <div class="row" id="zoomControls" style="justify-content:center;margin:8px 0"><button type="button" id="zoomOut" disabled>Zoom −</button><button type="button" id="zoomIn" disabled>Zoom +</button></div>
+<div class="row" id="borderControls" style="justify-content:center;margin:6px 0"><button type="button" id="adjustBorder">Adjust board border</button><button type="button" id="b3">Lock border now</button></div>
 <div class="row" id="autoResolveControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="autoResolveChoice"><strong>Auto resolver</strong></label><select id="autoResolveChoice" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="yes" selected>Yes</option><option value="no">No</option></select></div>
 <div id="msg">Loading the scanner and requesting camera access. Keep the full chessboard and all 4 corners in view.</div>
 <div id="barw"><div id="bar"></div></div>
@@ -79,9 +80,9 @@ small{color:var(--mut)}
 <div class="row">
 <button class="p" id="b1">Start camera</button>
 <button id="resetCamera">Reset camera</button>
-<button id="adjustBorder">Adjust border</button>
+
 <button id="b2">Auto-detect board</button>
-<button id="b3">Lock border now</button>
+
 <button id="b4">Rotate board ↻</button>
 <select id="viewSide" class="camera-select" aria-label="Camera board orientation"><option value="0">Camera: White side</option><option value="1">Camera: right side</option><option value="2">Camera: Black side</option><option value="3">Camera: left side</option></select>
 <button id="b5">Resync</button>
