@@ -49,6 +49,7 @@ small{color:var(--mut)}
 <section style="border:1px solid #8fa0ad55;border-radius:10px;padding:10px;margin:10px 0;background:var(--card)"><strong>ONNX board recognition</strong><div class="row"><input type="file" id="onnxFile" accept=".onnx" style="min-width:180px;flex:1"><input type="url" id="onnxUrl" value="https://huggingface.co/joelseytre/chessq-lite/resolve/fa83b74862c96c137f59ab4d11ed9431a8efbad5/cq-vit-s-644-v5-seed1-onnx-int8-r1.onnx" placeholder="ONNX model URL" style="min-width:180px;flex:1"><button type="button" id="loadOnnx">Load from internet</button></div><small id="onnxStatus">Choose a local .onnx file or load the prefilled ChessQueries Lite model from the internet. ONNX reads the standard starting position directly; no empty-board calibration is required.</small><button type="button" id="initialCustomStart">Use detected board as a custom starting position</button></section>
 <div id="stage"><video id="v" playsinline muted autoplay></video><canvas id="ov"></canvas></div>
 <div class="row" id="zoomControls" style="justify-content:center;margin:8px 0"><button type="button" id="zoomOut" disabled>Zoom −</button><button type="button" id="zoomIn" disabled>Zoom +</button></div>
+<div class="row" id="autoResolveControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="autoResolveChoice"><strong>Auto resolver</strong></label><select id="autoResolveChoice" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="yes" selected>Yes</option><option value="no">No</option></select></div>
 <div id="msg">Loading the scanner and requesting camera access. Keep the full chessboard and all 4 corners in view.</div>
 <div id="barw"><div id="bar"></div></div>
 <small id="modelStatus">ONNX model: waiting to be loaded</small><div id="last">—</div>
@@ -112,11 +113,7 @@ small{color:var(--mut)}
 <div id="moveConflict" role="dialog" aria-modal="true" aria-labelledby="moveConflictTitle">
  <div id="moveConflictPanel"><h2 id="moveConflictTitle">Scanner disagreement</h2>
  <p id="moveConflictMessage">Zen Mind and ONNX disagree. Choose how to resolve the position.</p>
- <div class="row" style="align-items:end;gap:10px;margin:12px 0">
-  <label for="autoResolveChoice" style="flex:1"><strong>Auto resolution</strong><br><select id="autoResolveChoice" style="width:100%;padding:10px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="no">No</option><option value="yes" selected>Yes</option></select></label>
-  <button type="button" id="resolveConflict" class="p">Resolve</button>
- </div>
- <div id="conflictManual" style="display:none">
+  <div id="conflictManual" style="display:none">
   <div id="conflictChoices"></div>
   <label for="conflictMove"><strong>Enter the move from the previous position</strong></label>
   <input id="conflictMove" placeholder="SAN: Nf3, e4, O-O or coordinates: g1f3, e7e8n">
@@ -464,7 +461,7 @@ function showMoveConflict(data){
  data.rankedCandidates=data.rankedCandidates||rankConflictCandidates(data);
  onnxConflict=data;onnxConflictOpen=true;
  $('moveConflictMessage').textContent=data.reason+' Both scanners were repeated twice. Percentages combine ONNX occupancy/colour evidence, Zen visual move evidence, repeat consistency and PGN legality.';
- $('conflictChoices').innerHTML='';$('conflictManual').style.display='none';$('autoResolveChoice').value='yes';
+ $('conflictChoices').innerHTML='';$('conflictManual').style.display='none';
  const add=(label,move,source)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=()=>commitOnnxMove(move,source);$('conflictChoices').appendChild(b)};
  data.rankedCandidates.forEach(x=>add(x.move.san+' — '+x.percent.toFixed(1)+'%  (ONNX '+x.onnxHits+'/'+(data.onnxScanResults||[]).length+', Zen '+x.zenHits+'/'+(data.zenScanResults||[]).length+')',x.move,'manual scanner selection'));
  if(!data.rankedCandidates.length){
@@ -472,15 +469,15 @@ function showMoveConflict(data){
  }
  if(data.placement&&data.allowNewSegment){const b=document.createElement('button');b.type='button';b.textContent='Accept ONNX board as a new PGN position segment';b.onclick=()=>acceptOnnxCorrection(data.placement,data.orientation);$('conflictChoices').appendChild(b)}
  $('conflictMove').value='';
- // Auto mode resolves silently when the evidence is strong enough.
- // Only show the dialog when automatic resolution cannot safely choose a move.
- if($('autoResolveChoice').value==='yes'&&autoResolveOnnxZen())return;
+ // Yes: resolve automatically without asking. No: show manual choices.
+ if($('autoResolveChoice').value==='yes'){
+  if(autoResolveOnnxZen())return;
+ }else{
+  $('moveConflictMessage').textContent='Manual resolution is enabled. Choose a suggested move or enter the move yourself.';
+  revealManualConflictOptions();
+ }
  $('moveConflict').classList.add('open');
 }
-$('resolveConflict').onclick=()=>{
- if($('autoResolveChoice').value==='yes'){autoResolveOnnxZen();}
- else{revealManualConflictOptions();$('moveConflictMessage').textContent='Manual resolution selected. Choose one of the suggested moves or enter the move yourself.';}
-};
 function acceptOnnxCorrection(placement,orientation){
  const turn=game.turn()==='w'?'b':'w',fen=onnxFen(placement,turn),g=new Chess();if(!g.load(fen)){msg('ONNX board is not a valid FEN.');return false;}const previous=game.fen();game=g;onnxLastFen=game.fen();onnxLastOrientation=orientation;onnxCurrentSegment={start:onnxLastFen,moves:[]};onnxSegments.push(onnxCurrentSegment);physicalMoveLog.push({label:'[User accepted ONNX position correction]',fen:onnxLastFen,previousFen:previous,illegal:true});hasIllegalMoves=true;onnxLastPhoto=new Uint8ClampedArray(onnxConflict.photo);onnxLastInferencePhoto=new Uint8ClampedArray(onnxLastPhoto);onnxConflict=null;closeMoveConflict();showMoves();drawPos(null);msg('User accepted ONNX position as a new PGN segment.');return true;
 }
