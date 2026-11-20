@@ -352,18 +352,17 @@ function cameraBoardCaptureSource(){
  if(boardToCamera.some(v=>!Number.isFinite(v)))return null;
  return {data:ctx.getImageData(0,0,source.width,source.height).data,width:source.width,height:source.height,boardToCamera};
 }
-function cameraBoardPng(source,col,row,size){
+function cameraBoardPng(source,col,row,size,span=1){
  if(!source)return null;
  const canvas=document.createElement('canvas');canvas.width=canvas.height=size;
  const ctx=canvas.getContext('2d'),out=ctx.createImageData(size,size),dst=out.data,src=source.data,w=source.width,h=source.height;
  for(let y=0;y<size;y++)for(let x=0;x<size;x++){
-  const p=ap(source.boardToCamera,col+(x+.5)/size,row+(y+.5)/size);
+  const p=ap(source.boardToCamera,col+(x+.5)*span/size,row+(y+.5)*span/size);
   const sx=Math.max(0,Math.min(w-1,p[0])),sy=Math.max(0,Math.min(h-1,p[1]));
-  const x0=Math.floor(sx),y0=Math.floor(sy),x1=Math.min(w-1,x0+1),y1=Math.min(h-1,y0+1),fx=sx-x0,fy=sy-y0;
-  const a=(y0*w+x0)*4,b=(y0*w+x1)*4,c=(y1*w+x0)*4,d=(y1*w+x1)*4,o=(y*size+x)*4;
-  for(let k=0;k<4;k++){const top=src[a+k]*(1-fx)+src[b+k]*fx,bot=src[c+k]*(1-fx)+src[d+k]*fx;dst[o+k]=top*(1-fy)+bot*fy;}
+  const ix=Math.max(0,Math.min(w-1,Math.round(sx))),iy=Math.max(0,Math.min(h-1,Math.round(sy))),a=(iy*w+ix)*4,o=(y*size+x)*4;
+  dst[o]=src[a];dst[o+1]=src[a+1];dst[o+2]=src[a+2];dst[o+3]=src[a+3];
  }
- ctx.putImageData(out,0,0);return canvas.toDataURL('image/png').split(',')[1];
+ ctx.putImageData(out,0,0);return canvas.toDataURL('image/jpeg',.72).split(',')[1];
 }
 function captureOnnxPieceReferences(placement,orientation){
  if(onnxPieceReferences.length||!placement)return;
@@ -384,12 +383,13 @@ function photoClickBeep(){
  const play=()=>{if(!ac)return;try{const o=ac.createOscillator(),g=ac.createGain(),at=ac.currentTime;o.type='sine';o.frequency.setValueAtTime(1046,at);g.gain.setValueAtTime(.0001,at);g.gain.exponentialRampToValueAtTime(.22,at+.008);g.gain.exponentialRampToValueAtTime(.0001,at+.13);o.connect(g);g.connect(ac.destination);o.start(at);o.stop(at+.15)}catch(e){console.warn('Photo beep unavailable:',e)}};
  if(!ac)return;if(ac.state==='suspended')ac.resume().then(play).catch(()=>{});else play();
 }
-function captureSilentBoardSnapshot(placement){
+function captureSilentBoardSnapshot(){
  const source=cameraBoardCaptureSource();if(!source)return null;
- const data=cameraBoardPng(source,0,0,1024);if(!data)return null;
+ // Capture the complete 8x8 board. A smaller JPEG keeps the shutter path light.
+ const data=cameraBoardPng(source,0,0,512,8);if(!data)return null;
  const when=new Date(),stamp=timestampFileStamp(when),index=onnxMoveImages.length+1;
- const name='silent_board_'+String(index).padStart(4,'0')+'_'+stamp+'.png';
- const item={name,data,timestamp:timestampIso(when),placement,ply:game?game.history().length:0,segment:Math.max(0,onnxSegments.indexOf(onnxCurrentSegment)),source:'original camera'};
+ const name='silent_board_'+String(index).padStart(4,'0')+'_'+stamp+'.jpg';
+ const item={name,data,timestamp:timestampIso(when),source:'original camera, full 8x8 board'};
  onnxMoveImages.push(item);updateMoveImageControls();photoClickBeep();return item;
 }
 function silentBoardPhotoStep(){
@@ -398,14 +398,18 @@ function silentBoardPhotoStep(){
  if(!onnxSilentObservedPhoto){onnxSilentObservedPhoto=photo;return}
  const drift=photographDifference(onnxSilentObservedPhoto,photo),sorted=Array.from(drift).sort((a,b)=>a-b),noise=sorted[32]||0,active=drift.filter(v=>v>Math.max(2.4,noise*2.3)).length;
  const changed=active>=2||Math.max(...drift)>6;
- if(changed){onnxSilentPendingPhoto=true;onnxSilentPendingSince=now;onnxSilentObservedPhoto=photo;return}
  onnxSilentObservedPhoto=photo;
- if(!onnxSilentPendingPhoto||now-onnxSilentPendingSince<800)return;
- if(onnxSilentLastSavedPhoto&&photographDifference(onnxSilentLastSavedPhoto,photo).every(v=>v<2.2)){onnxSilentPendingPhoto=false;return}
- const placement=onnxLastFen?onnxLastFen.split(' ')[0]:'';
- const saved=captureSilentBoardSnapshot(placement);
- if(saved)onnxSilentLastSavedPhoto=photo;
- onnxSilentPendingPhoto=false;
+ if(changed){
+  if(!onnxSilentPendingPhoto){
+   onnxSilentPendingPhoto=true;
+   const saved=captureSilentBoardSnapshot();
+   if(saved)onnxSilentLastSavedPhoto=photo;
+  }
+  onnxSilentPendingSince=now;
+  return;
+ }
+ // Re-arm after a brief quiet interval; this is not a capture delay.
+ if(onnxSilentPendingPhoto&&now-onnxSilentPendingSince>=250)onnxSilentPendingPhoto=false;
 }
 function captureOnnxObservedBoardImage(placement,photo){
  if($('saveMoveImages').value!=='yes'||!photo||!onnxCanvas.width)return null;
