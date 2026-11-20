@@ -304,10 +304,14 @@ async function predictOnnxPlacement(){
  const logits=out.logits?.data||out[onnxSession.outputNames.find(x=>x.toLowerCase().includes('logit'))]?.data;
  const direction=out.direction?.data||out[onnxSession.outputNames.find(x=>x.toLowerCase().includes('direction'))]?.data;
  if(!logits||!direction)throw new Error('Unexpected ONNX outputs. Expected logits and direction.');
- const labels=[];
- for(let q=0;q<64;q++){let best=0;for(let k=1;k<13;k++)if(logits[q*13+k]>logits[q*13+best])best=k;labels.push(ONNX_PIECES[best])}
+ const labels=[],occupied=[];
+ for(let q=0;q<64;q++){
+  let best=0;for(let k=1;k<13;k++)if(logits[q*13+k]>logits[q*13+best])best=k;
+  labels.push(ONNX_PIECES[best]);occupied.push(best===0?'.':'x');
+ }
  const placement=Array.from({length:8},(_,r)=>labels.slice(r*8,r*8+8).join('').replace(/\.+/g,m=>m.length)).join('/');
- return {placement:onnxPlacementToFen(placement),orientation:direction[0]<ONNX_WHITE_COS?'black':'white'};
+ const occupancy=Array.from({length:8},(_,r)=>occupied.slice(r*8,r*8+8).join('').replace(/\.+/g,m=>m.length)).join('/');
+ return {placement:onnxPlacementToFen(placement),occupancy:onnxPlacementToFen(occupancy),orientation:direction[0]<ONNX_WHITE_COS?'black':'white'};
 }
 function onnxFen(placement,turn='w'){
  const standard='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR';
@@ -489,9 +493,11 @@ $('confirmConflictMove').onclick=()=>{
  msg('That move is not legal from the previous position. Enter SAN or coordinates such as g1f3 or e7e8n.');
 };
 $('cancelConflictMove').onclick=()=>{const photo=latestFlatPixels?new Uint8ClampedArray(latestFlatPixels):null;closeMoveConflict();onnxConflict=null;onnxPendingPhoto=false;onnxLastInferencePhoto=photo;msg('Move not recorded. The previous confirmed position is retained. Correct the physical board or press Resync to check again.')};
-async function onnxAcceptPosition(placement,orientation){
+async function onnxAcceptPosition(placement,orientation,occupancy){
  onnxLastOrientation=orientation;
  if(!game){
+  // Standard start verification uses occupied/empty squares only, not piece identities.
+  if(occupancy===placementOccupancy(STD_START))placement=STD_START;
   $('initialCustomStart').style.display='none';
   drawOnnxPlacement(placement);
   if(placement===STD_START){
@@ -548,7 +554,7 @@ async function onnxStep(){
   onnxObservedPhoto=photo;
   if(!onnxPendingPhoto||now-onnxPendingSince<450)return;
   if(onnxLastInferencePhoto){const since=photographDifference(onnxLastInferencePhoto,photo);if(since.every(v=>v<2.2)){onnxPendingPhoto=false;return;}}
-  onnxBusy=true;onnxPendingPhoto=false;st(2,'one ONNX inference…');const result=await predictOnnxPlacement();if(!result.placement)throw new Error('Model returned an invalid board placement.');onnxLastOrientation=result.orientation;onnxLastInferencePhoto=photo;await onnxAcceptPosition(result.placement,result.orientation);
+  onnxBusy=true;onnxPendingPhoto=false;st(2,'one ONNX inference…');const result=await predictOnnxPlacement();if(!result.placement)throw new Error('Model returned an invalid board placement.');onnxLastOrientation=result.orientation;onnxLastInferencePhoto=photo;await onnxAcceptPosition(result.placement,result.orientation,result.occupancy);
  }catch(e){console.error(e);msg('ONNX inference error: '+e.message)}finally{onnxBusy=false;}
 }
 
