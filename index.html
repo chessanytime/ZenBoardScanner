@@ -76,6 +76,10 @@ small{color:var(--mut)}
 </section>
 <div class="row">
 <button class="p" id="b1">Start camera</button>
+<button id="resetCamera">Reset camera</button>
+<button id="zoomOut" disabled>Zoom −</button>
+<button id="zoomIn" disabled>Zoom +</button>
+<button id="adjustBorder">Adjust border</button>
 <button id="b2">Auto-detect board</button>
 <button id="b3">Lock border now</button>
 <button id="b4">Rotate board ↻</button>
@@ -1423,8 +1427,10 @@ else {
  };
  O.onpointerup=O.onpointercancel=()=>{dr=-1;dragQuad=null;dragStart=null};
 /* ---------- camera + buttons ---------- */
-let cameraDevices=[],selectedCamera='',torchOn=false,cameraBusy=false;
+let cameraDevices=[],selectedCamera='',torchOn=false,cameraBusy=false,cameraZoom=1,cameraZoomCaps=null;
 const cameraSelect=$('cameraSelect'),flashBtn=$('flashBtn');
+function updateZoomControls(){const track=stream?.getVideoTracks()[0];try{cameraZoomCaps=track?.getCapabilities?.().zoom||null}catch(e){cameraZoomCaps=null}const supported=!!cameraZoomCaps&&Number.isFinite(cameraZoomCaps.min)&&Number.isFinite(cameraZoomCaps.max)&&cameraZoomCaps.max>cameraZoomCaps.min;$('zoomIn').disabled=!supported||cameraZoom>=cameraZoomCaps.max-.01;$('zoomOut').disabled=!supported||cameraZoom<=cameraZoomCaps.min+.01;$('zoomIn').title=supported?'Increase camera zoom':'Hardware zoom is not supported by this camera/browser';$('zoomOut').title=$('zoomIn').title;}
+async function setCameraZoom(next){const track=stream?.getVideoTracks()[0];if(!track)return;try{const caps=track.getCapabilities?.().zoom;if(!caps||caps.max<=caps.min){msg('This camera/browser does not support adjustable hardware zoom.');updateZoomControls();return}cameraZoom=Math.max(caps.min,Math.min(caps.max,next));await track.applyConstraints({advanced:[{zoom:cameraZoom}]});updateZoomControls();msg('Camera zoom: '+cameraZoom.toFixed(1)+'×. Reposition the border if needed.')}catch(e){msg('Camera zoom could not be changed: '+e.message);updateZoomControls()}}
 async function listCameras(){
  try{const devices=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');cameraDevices=devices;
  const active=stream?.getVideoTracks()[0]?.getSettings()?.deviceId||'';
@@ -1449,12 +1455,13 @@ async function cam(){cancelPromotion();if(cameraBusy)return;cameraBusy=true;cons
  try{stream=await navigator.mediaDevices.getUserMedia({video:constraints,audio:false})}
  catch(e){if(!selectedCamera)throw e;selectedCamera='';stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:facing}},audio:false})}
  V.srcObject=stream;await V.play();
+ cameraZoom=1;updateZoomControls();
  const w=V.videoWidth,h=V.videoHeight;O.width=w;O.height=h;sc=Math.min(1,640/w);W.width=w*sc|0;W.height=h*sc|0;
  const side=Math.min(w,h)*.8,cx=w/2,cy=h/2;
  quad=[[cx-side/2,cy-side/2],[cx+side/2,cy-side/2],[cx+side/2,cy+side/2],[cx-side/2,cy+side/2]];
  // Camera changes reset board geometry; ONNX reads the position directly.
  base=null;occModel=null;occModelReady=false;$('modelStatus').textContent='ONNX model: loaded; searching for board';refF=null;prevF=null;thrQ=null;stable=0;rot=0;$('viewSide').disabled=false;$('b4').disabled=false;startSearch();
- await listCameras();updateFlash();
+ await listCameras();updateFlash();updateZoomControls();
  }catch(e){flashBtn.disabled=true;flashBtn.textContent='Flash: unavailable';msg('Camera error: '+e.message+'. Use HTTPS or localhost and allow camera permission.')}
  finally{cameraBusy=false}
 }
@@ -1511,6 +1518,10 @@ function refreshIllegalExport(){const t=illegalFenText();$('exportIllegalFen').s
 $('exportIllegalFen').onclick=()=>{const t=illegalFenText();if(!t)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:'text/plain'}));a.download='illegal-move-positions.txt';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)};
 $('whiteName').addEventListener('input',()=>{});$('blackName').addEventListener('input',()=>{});
 $('b1').onclick=()=>{if(!onnxSession){msg('Load the ONNX model first.');return}cam()};
+$('resetCamera').onclick=async()=>{if(!onnxSession){msg('Load the ONNX model first.');return}selectedCamera=cameraSelect.value;await cam();if(stream)msg('Camera restarted and zoom reset. Check the picture, adjust the border, then lock it.')};
+$('zoomIn').onclick=()=>setCameraZoom((cameraZoom||1)+Math.max(.25,((cameraZoomCaps?.max||1)-(cameraZoomCaps?.min||1))/10));
+$('zoomOut').onclick=()=>setCameraZoom((cameraZoom||1)-Math.max(.25,((cameraZoomCaps?.max||1)-(cameraZoomCaps?.min||1))/10));
+$('adjustBorder').onclick=()=>{if(!stream){msg('Start the camera first, then adjust the border.');return}if(mode==='onnx'||mode==='rec'||mode==='pieces'){msg('To avoid losing the current game, border adjustment is available before locking the board. Reset camera to begin a fresh setup, then adjust the border before locking.');return}startSearch('manual')};
 $('b2').onclick=()=>{if(stream){$('viewSide').disabled=false;$('b4').disabled=false;startSearch()}};
 $('b3').onclick=()=>{if(stream&&(mode=='search'||mode=='manual'))lock(false)};
 $('b4').onclick=()=>{if(mode==='onnx'){msg('Board orientation is determined exclusively by the ONNX direction output.');return}rot=(rot+1)%4;$('viewSide').value=String(rot);if(mode=='scan'){n=0;acc=null}else if(mode==='rec'||mode==='pieces'){mode='scan';n=0;acc=null;msg('Orientation changed: update board view before continuing.')}else msg('Board rotated 90°.')};
