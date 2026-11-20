@@ -47,10 +47,23 @@ small{color:var(--mut)}
 #initialCustomStart{display:none;margin:8px 0}
 </style></head><body>
 <h1>Zen Mind — ONNX Chess Move Scanner</h1>
+<div style="margin:4px 0 12px;font-size:1.05rem"><strong>Version 2</strong></div>
+<div class="row" style="margin:8px 0 14px;justify-content:flex-start">
+ <button class="p" id="b1">Start camera</button>
+ <button id="resetCamera">Reset camera</button>
+</div>
 <section style="border:1px solid #8fa0ad55;border-radius:10px;padding:10px;margin:10px 0;background:var(--card)"><strong>ONNX board recognition</strong><div class="row"><input type="file" id="onnxFile" accept=".onnx" style="min-width:180px;flex:1"><input type="url" id="onnxUrl" value="https://huggingface.co/joelseytre/chessq-lite/resolve/fa83b74862c96c137f59ab4d11ed9431a8efbad5/cq-vit-s-644-v5-seed1-onnx-int8-r1.onnx" placeholder="ONNX model URL" style="min-width:180px;flex:1"><button type="button" id="loadOnnx">Load from internet</button></div><small id="onnxStatus">Choose a local .onnx file or load the prefilled ChessQueries Lite model from the internet. ONNX reads the standard starting position directly; no empty-board calibration is required.</small><button type="button" id="initialCustomStart">Use detected board as a custom starting position</button></section>
 <div id="stage"><video id="v" playsinline muted autoplay></video><canvas id="ov"></canvas></div>
 <div class="row" id="zoomControls" style="justify-content:center;margin:8px 0"><button type="button" id="zoomOut" disabled>Zoom −</button><button type="button" id="zoomIn" disabled>Zoom +</button></div>
 <div class="row" id="borderControls" style="justify-content:center;margin:6px 0"><button type="button" id="adjustBorder">Adjust board border</button><button type="button" id="b3">Lock border now</button></div>
+<div class="row" id="initialModeControls" style="justify-content:center;align-items:center;gap:8px;margin:8px 0">
+ <label for="initialMode"><strong>Initial position method</strong></label>
+ <select id="initialMode" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66">
+  <option value="skip">Skip initial position detection (assume standard start)</option>
+  <option value="zen">Check with Zen scanner (empty-board calibration)</option>
+  <option value="onnx" selected>Use ONNX for initial position and all moves</option>
+ </select>
+</div>
 <div class="row" id="verifyInitialControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="verifyInitialPieces"><strong>Piece detection</strong></label><select id="verifyInitialPieces" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="no" selected>No</option><option value="yes">Yes</option></select></div>
 <div class="row" id="saveMoveImagesControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="saveMoveImages"><strong>Save ONNX image per move</strong></label><select id="saveMoveImages" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="no">No</option><option value="yes" selected>Yes</option></select></div>
 <div class="row" style="justify-content:center;margin:6px 0"><button type="button" id="downloadMoveImages" style="display:none">Download game images + references (.zip)</button><small id="moveImageStatus">Move image saving is off.</small></div>
@@ -84,9 +97,6 @@ small{color:var(--mut)}
 <small>Deletes the entire liveChessGames collection. This cannot be undone. Use only with a trusted broadcaster account.</small>
 </section>
 <div class="row">
-<button class="p" id="b1">Start camera</button>
-<button id="resetCamera">Reset camera</button>
-
 <button id="b2">Auto-detect board</button>
 
 <button id="b4">Rotate board ↻</button>
@@ -760,7 +770,26 @@ async function onnxStep(){
 function startSearch(m){mode=m||'search';found=0;lastQ=null;t0=Date.now();st(1,m=='manual'?'drag corners, then Lock':'searching…');st(2,'waiting');st(3,'waiting');st(4,'waiting');prog(0);
 msg(m=='manual'?'Drag the 4 white dots onto the board corners, then tap “Lock border now”.':'Searching for the board… show the full chessboard with all 4 corners in view. You can also drag the dots yourself.')}
 function extOut(){const H=hom([[0,0],[8,0],[8,8],[0,8]],rq());return[[-1,-1],[9,-1],[9,9],[-1,9]].some(p=>{const[x,y]=ap(H,p[0],p[1]);return x<0||y<0||x>O.width||y>O.height})}
-function lock(a){if(!onnxSession){msg('Load the ONNX model before locking the board.');return}occModelReady=false;occModel=null;mode='onnx';rot=0;$('viewSide').value='0';$('viewSide').disabled=true;$('b4').disabled=true;onnxReset();prevF=null;st(1,'locked ✓','ok');st(2,'waiting for one ONNX read');st(3,'checking standard setup');st(4,'waiting');prog(0);msg('Board locked. Waiting for one settled ONNX reading. No empty-board calibration or three-reading confirmation is used.');a?foundSnd():beep(660,.12,.45)}
+function lock(a){
+ const method=$('initialMode').value;
+ if(method!=='zen'&&!onnxSession){msg('Load the ONNX model first, or choose Zen scanner.');return}
+ occModelReady=false;occModel=null;rot=0;$('viewSide').value='0';$('viewSide').disabled=method!=='zen';$('b4').disabled=method!=='zen';
+ onnxReset();prevF=null;st(1,'locked ✓','ok');prog(0);
+ if(method==='zen'){
+  mode='scan';n=0;acc=null;st(2,'calibrating empty board');st(3,'waiting for pieces');st(4,'waiting');
+  msg('Board locked. Zen scanner selected: keep the board completely empty for calibration, then place all pieces in the standard starting position.');
+ }else if(method==='skip'){
+  mode='onnx';startOnnxGame(STD_START,'white',false);
+  onnxObservedPhoto=latestFlatPixels?new Uint8ClampedArray(latestFlatPixels):null;
+  onnxPendingPhoto=false;
+  st(2,'initial detection skipped','ok');st(3,'standard start assumed','ok');
+  msg('Initial position detection skipped. The standard starting position is assumed; ONNX will track subsequent moves.');
+ }else{
+  mode='onnx';st(2,'waiting for one ONNX read');st(3,'checking initial position');st(4,'waiting');
+  msg('Board locked. ONNX will read the initial position and track the game. If the first reading is non-standard, it will retry once after 3 seconds.');
+ }
+ a?foundSnd():beep(660,.12,.45)
+}
 function detectByContours(){
  if(!(window.cv&&cv.Mat&&cv.findContours))return null;
  let src,gray,blur,edges,contours,hierarchy;
@@ -1725,8 +1754,8 @@ function illegalFenText(){return physicalMoveLog.filter(x=>x.illegal).map((x,i)=
 function refreshIllegalExport(){const t=illegalFenText();$('exportIllegalFen').style.display=t?'':'none';$('illegalFenBox').style.display=t?'block':'none';$('illegalFenBox').value=t}
 $('exportIllegalFen').onclick=()=>{const t=illegalFenText();if(!t)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:'text/plain'}));a.download='illegal-move-positions.txt';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)};
 $('whiteName').addEventListener('input',()=>{});$('blackName').addEventListener('input',()=>{});
-$('b1').onclick=()=>{if(!onnxSession){msg('Load the ONNX model first.');return}cam()};
-$('resetCamera').onclick=async()=>{if(!onnxSession){msg('Load the ONNX model first.');return}selectedCamera=cameraSelect.value;await cam();if(stream)msg('Camera restarted and zoom reset. Check the picture, adjust the border, then lock it.')};
+$('b1').onclick=()=>cam();
+$('resetCamera').onclick=async()=>{selectedCamera=cameraSelect.value;await cam();if(stream)msg('Camera restarted and zoom reset. Check the picture, adjust the border, then lock it.')};
 $('zoomIn').onclick=()=>setCameraZoom((cameraZoom||1)+Math.max(.25,((cameraZoomCaps?.max||1)-(cameraZoomCaps?.min||1))/10));
 $('zoomOut').onclick=()=>setCameraZoom((cameraZoom||1)-Math.max(.25,((cameraZoomCaps?.max||1)-(cameraZoomCaps?.min||1))/10));
 $('adjustBorder').onclick=()=>{if(!stream){msg('Start the camera first, then adjust the border.');return}if(mode==='onnx'||mode==='rec'||mode==='pieces'){msg('To avoid losing the current game, border adjustment is available before locking the board. Reset camera to begin a fresh setup, then adjust the border before locking.');return}warpMap=null;warpMapKey='';startSearch('manual')};
