@@ -4,7 +4,6 @@
 <title>Zen Mind — ONNX Chess Move Scanner</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.webgpu.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <style>
@@ -45,6 +44,10 @@ small{color:var(--mut)}
 #conflictChoices{display:grid;grid-template-columns:1fr;gap:7px;margin:10px 0}
 #conflictChoices button{width:100%;text-align:left}
 #initialCustomStart{display:none;margin:8px 0}
+#modelSetup,#verifyInitialControls,#saveMoveImagesControls,#decisionSpeedControls,#autoResolveControls,#modelStatus,#last,#moves,#pgnbox,#whiteName,#blackName,#manualMove,#addManualMove,#deleteLastMove,#illegalFenBox,#exportIllegalFen,#liveControls,#moveConflict,#promotionPrompt{display:none!important}
+body>section:not(#modelSetup){display:none!important}
+#b4,#b5,#b6,#b7,#redoRecording,#b9,#b10,#b11,#b12,#b15,#recoverBtn{display:none!important}
+#s3,#s4{display:none!important}
 </style></head><body>
 <h1>Zen Mind — Chessboard Photo Capture</h1>
 <section id="modelSetup" style="display:none"><strong>ONNX board recognition</strong><div class="row"><input type="file" id="onnxFile" accept=".onnx" style="min-width:180px;flex:1"><input type="url" id="onnxUrl" value="https://huggingface.co/joelseytre/chessq-lite/resolve/fa83b74862c96c137f59ab4d11ed9431a8efbad5/cq-vit-s-644-v5-seed1-onnx-int8-r1.onnx" placeholder="ONNX model URL" style="min-width:180px;flex:1"><button type="button" id="loadOnnx">Load from internet</button></div><small id="onnxStatus">Choose a local .onnx file or load the prefilled ChessQueries Lite model from the internet. ONNX reads the standard starting position directly; no empty-board calibration is required.</small><button type="button" id="initialCustomStart">Use detected board as a custom starting position</button></section>
@@ -106,13 +109,8 @@ small{color:var(--mut)}
 <button id="cvToggle">OpenCV: loading…</button>
 <button id="recoverBtn">Recover missed move</button>
 </div>
-<ol>
-<li>Detect board border <b id="s1">waiting</b></li>
-<li>ONNX single-shot position recognition <b id="s2">waiting</b></li>
-<li>Starting position verified <b id="s3">waiting</b></li>
-<li>Comparing Zen and ONNX decisions <b id="s4">waiting</b></li>
-</ol>
-<small>Red thick border = searching. Green thick border = board found. If the border is off, drag the white dots onto the board corners and press “Lock border now”. ONNX reads the starting position directly after the border is locked. It makes one inference after the board settles, then compares each changed position with Zen Mind’s visual move analysis and legal chess moves. Keep all 64 squares visible and hold the camera steady.</small>
+<ol><li>Board border <b id="s1">searching</b></li><li>Manual photo capture <b id="s2">ready after lock</b></li><li id="s3"></li><li id="s4"></li></ol>
+<small>Red border means the app is searching. Green means the board is locked. Drag the corner or edge handles to align the border, then lock it. Take pictures manually whenever you need them.</small>
 <div class="cv" style="margin-top:10px">
 <figure><figcaption>Detected position (red = piece expected but not seen, orange = unexpected piece)</figcaption><canvas class="sq" id="pos" width="240" height="240"></canvas></figure>
 <figure><figcaption>Flattened view (all 64 squares; 28×28 pixel sampling per square)</figcaption><canvas class="sq" id="flat" width="320" height="320"></canvas></figure>
