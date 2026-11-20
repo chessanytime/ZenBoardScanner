@@ -251,7 +251,7 @@ for(let q=0;q<64;q++){for(let k=0;k<48;k++)A[q*K+k]=Math.min(255,F[q*K+k]*g);A[q
 
 /* ---------- ONNX position recognition ---------- */
 let onnxSession=null, onnxBusy=false,onnxProvider='wasm';
-let onnxMoveImages=[],onnxPieceReferences=[],onnxVideoRecorder=null,onnxVideoChunks=[],onnxVideoBlob=null,onnxVideoCanvas=null,onnxVideoCtx=null,onnxVideoStream=null,onnxVideoStartedAt=null,onnxLastSavedBoardPhoto=null;
+let onnxMoveImages=[],onnxPieceReferences=[],onnxVideoRecorder=null,onnxVideoChunks=[],onnxVideoBlob=null,onnxVideoCanvas=null,onnxVideoCtx=null,onnxVideoStream=null,onnxVideoStartedAt=null,onnxLastSavedBoardPhoto=null,onnxSilentObservedPhoto=null,onnxSilentPendingPhoto=false,onnxSilentPendingSince=0,onnxSilentLastSavedPhoto=null;
 let onnxLastOrientation='white', onnxLastFen='', onnxSegments=[], onnxCurrentSegment=null;
 let onnxLastPhoto=null,onnxObservedPhoto=null,onnxPendingPhoto=false,onnxPendingSince=0,onnxLastInferencePhoto=null,onnxInitialPending=null,onnxConflict=null,onnxConflictOpen=false;
 const ONNX_SIZE=644, ONNX_PIECES='.PNBRQKpnbrqk';
@@ -329,7 +329,7 @@ function onnxFen(placement,turn='w'){
 }
 function onnxReset(){
  if(onnxVideoRecorder&&onnxVideoRecorder.state!=='inactive')stopOnnxVideoRecording();
- onnxMoveImages=[];onnxPieceReferences=[];onnxLastSavedBoardPhoto=null;updateMoveImageControls();
+ onnxMoveImages=[];onnxPieceReferences=[];onnxLastSavedBoardPhoto=null;onnxSilentObservedPhoto=null;onnxSilentPendingPhoto=false;onnxSilentPendingSince=0;onnxSilentLastSavedPhoto=null;updateMoveImageControls();
  closeMoveConflict();onnxLastPhoto=null;onnxObservedPhoto=null;onnxPendingPhoto=false;onnxPendingSince=0;onnxLastInferencePhoto=null;onnxInitialPending=null;onnxConflict=null;
  onnxLastFen='';onnxSegments=[];onnxCurrentSegment=null;game=null;physicalMoveLog=[];hasIllegalMoves=false;showMoves();$('initialCustomStart').style.display='none';drawPos(null);
 }
@@ -343,24 +343,69 @@ function timestampFileStamp(date=new Date()){
  return p(date.getHours())+p(date.getMinutes())+p(date.getSeconds());
 }
 function timestampIso(date=new Date()){return date.toISOString()}
+function cameraBoardCaptureSource(){
+ if(!V.videoWidth||!V.videoHeight||!quad||!sc)return null;
+ const source=document.createElement('canvas');source.width=V.videoWidth;source.height=V.videoHeight;
+ const ctx=source.getContext('2d',{willReadFrequently:true});ctx.drawImage(V,0,0,source.width,source.height);
+ const corners=rq().map(p=>[p[0]/sc,p[1]/sc]);
+ const boardToCamera=hom([[0,0],[8,0],[8,8],[0,8]],corners);
+ if(boardToCamera.some(v=>!Number.isFinite(v)))return null;
+ return {data:ctx.getImageData(0,0,source.width,source.height).data,width:source.width,height:source.height,boardToCamera};
+}
+function cameraBoardPng(source,col,row,size){
+ if(!source)return null;
+ const canvas=document.createElement('canvas');canvas.width=canvas.height=size;
+ const ctx=canvas.getContext('2d'),out=ctx.createImageData(size,size),dst=out.data,src=source.data,w=source.width,h=source.height;
+ for(let y=0;y<size;y++)for(let x=0;x<size;x++){
+  const p=ap(source.boardToCamera,col+(x+.5)/size,row+(y+.5)/size);
+  const sx=Math.max(0,Math.min(w-1,p[0])),sy=Math.max(0,Math.min(h-1,p[1]));
+  const x0=Math.floor(sx),y0=Math.floor(sy),x1=Math.min(w-1,x0+1),y1=Math.min(h-1,y0+1),fx=sx-x0,fy=sy-y0;
+  const a=(y0*w+x0)*4,b=(y0*w+x1)*4,c=(y1*w+x0)*4,d=(y1*w+x1)*4,o=(y*size+x)*4;
+  for(let k=0;k<4;k++){const top=src[a+k]*(1-fx)+src[b+k]*fx,bot=src[c+k]*(1-fx)+src[d+k]*fx;dst[o+k]=top*(1-fy)+bot*fy;}
+ }
+ ctx.putImageData(out,0,0);return canvas.toDataURL('image/png').split(',')[1];
+}
 function captureOnnxPieceReferences(placement,orientation){
- if(onnxPieceReferences.length||!placement||!onnxCanvas.width)return;
- const rows=expandPlacement(placement);if(!rows)return;const stamp=timestampFileStamp();
+ if(onnxPieceReferences.length||!placement)return;
+ const rows=expandPlacement(placement),source=cameraBoardCaptureSource();if(!rows||!source)return;
+ const stamp=timestampFileStamp();
  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
   const piece=rows[r][c];if(piece==='.')continue;
   const file=orientation==='black'?7-c:c,rank=orientation==='black'?r+1:8-r;
   if(!(rank===1||rank===8||((rank===2||rank===7)&&file<2)))continue;
-  const row=orientation==='black'?rank-1:8-rank,col=orientation==='black'?7-file:file,tile=onnxCanvas.width/8;
-  const canvas=document.createElement('canvas');canvas.width=canvas.height=400;
-  const ctx=canvas.getContext('2d');ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
-  // Enlarge the complete square crop and store it losslessly. The ONNX input
-  // is the source, so no extra JPEG compression is introduced here.
-  ctx.drawImage(onnxCanvas,col*tile,row*tile,tile,tile,0,0,400,400);
+  const row=orientation==='black'?rank-1:8-rank,col=orientation==='black'?7-file:file;
   const color=piece===piece.toUpperCase()?'white':'black',type=piece.toLowerCase(),square='abcdefgh'[file]+rank;
   const name='reference_'+color+'_'+type+'_'+square+'_'+stamp+'.png';
-  onnxPieceReferences.push({name,data:canvas.toDataURL('image/png').split(',')[1],piece,color,type,square,capturedAt:timestampIso()});
+  const data=cameraBoardPng(source,col,row,512);if(data)onnxPieceReferences.push({name,data,piece,color,type,square,capturedAt:timestampIso(),source:'original camera'});
  }
  updateMoveImageControls();
+}
+function photoClickBeep(){
+ const play=()=>{if(!ac)return;try{const o=ac.createOscillator(),g=ac.createGain(),at=ac.currentTime;o.type='sine';o.frequency.setValueAtTime(1046,at);g.gain.setValueAtTime(.0001,at);g.gain.exponentialRampToValueAtTime(.22,at+.008);g.gain.exponentialRampToValueAtTime(.0001,at+.13);o.connect(g);g.connect(ac.destination);o.start(at);o.stop(at+.15)}catch(e){console.warn('Photo beep unavailable:',e)}};
+ if(!ac)return;if(ac.state==='suspended')ac.resume().then(play).catch(()=>{});else play();
+}
+function captureSilentBoardSnapshot(placement){
+ const source=cameraBoardCaptureSource();if(!source)return null;
+ const data=cameraBoardPng(source,0,0,1024);if(!data)return null;
+ const when=new Date(),stamp=timestampFileStamp(when),index=onnxMoveImages.length+1;
+ const name='silent_board_'+String(index).padStart(4,'0')+'_'+stamp+'.png';
+ const item={name,data,timestamp:timestampIso(when),placement,ply:game?game.history().length:0,segment:Math.max(0,onnxSegments.indexOf(onnxCurrentSegment)),source:'original camera'};
+ onnxMoveImages.push(item);updateMoveImageControls();photoClickBeep();return item;
+}
+function silentBoardPhotoStep(){
+ updateOnnxVideoFrame();
+ const photo=new Uint8ClampedArray(latestFlatPixels),now=performance.now();
+ if(!onnxSilentObservedPhoto){onnxSilentObservedPhoto=photo;return}
+ const drift=photographDifference(onnxSilentObservedPhoto,photo),sorted=Array.from(drift).sort((a,b)=>a-b),noise=sorted[32]||0,active=drift.filter(v=>v>Math.max(2.4,noise*2.3)).length;
+ const changed=active>=2||Math.max(...drift)>6;
+ if(changed){onnxSilentPendingPhoto=true;onnxSilentPendingSince=now;onnxSilentObservedPhoto=photo;return}
+ onnxSilentObservedPhoto=photo;
+ if(!onnxSilentPendingPhoto||now-onnxSilentPendingSince<800)return;
+ if(onnxSilentLastSavedPhoto&&photographDifference(onnxSilentLastSavedPhoto,photo).every(v=>v<2.2)){onnxSilentPendingPhoto=false;return}
+ const placement=onnxLastFen?onnxLastFen.split(' ')[0]:'';
+ const saved=captureSilentBoardSnapshot(placement);
+ if(saved)onnxSilentLastSavedPhoto=photo;
+ onnxSilentPendingPhoto=false;
 }
 function captureOnnxObservedBoardImage(placement,photo){
  if($('saveMoveImages').value!=='yes'||!photo||!onnxCanvas.width)return null;
@@ -381,7 +426,7 @@ function updateVideoControls(){
  const active=!!(onnxVideoRecorder&&onnxVideoRecorder.state==='recording');
  $('downloadGameVideo').style.display=onnxVideoBlob?'inline-block':'none';
  $('stopGameVideo').style.display=active?'inline-block':'none';
- $('videoStatus').textContent=active?($('recordVideo').value==='silent'?'Silent mode: recording board video only…':'Recording board video + move detection…'):onnxVideoBlob?'Video ready to download.':$('recordVideo').value!=='no'?'Video will start when the board is initialized.':'Video recording is off.';
+ $('videoStatus').textContent=active?($('recordVideo').value==='silent'?'Silent photos + optional board video…':'Recording board video + move detection…'):onnxVideoBlob?'Video ready to download.':$('recordVideo').value==='silent'?'Silent photo capture active; video is optional.':$('recordVideo').value==='yes'?'Video will start when the board position is initialized.':'Video recording is off.';
  $('toggleGameVideo').textContent=active?'Recording…':'Start video recording';
 }
 function updateOnnxVideoFrame(){
@@ -411,7 +456,7 @@ function downloadOnnxGameVideo(){
 $('downloadGameVideo').onclick=downloadOnnxGameVideo;
 $('stopGameVideo').onclick=stopOnnxVideoRecording;
 $('toggleGameVideo').onclick=()=>{if(onnxVideoRecorder&&onnxVideoRecorder.state==='recording'){stopOnnxVideoRecording();$('toggleGameVideo').textContent='Start video recording'}else{if($('recordVideo').value==='no')$('recordVideo').value='yes';startOnnxVideoRecording();$('toggleGameVideo').textContent='Recording…'}};
-$('recordVideo').onchange=()=>{const choice=$('recordVideo').value;if(choice==='no'){stopOnnxVideoRecording();$('toggleGameVideo').textContent='Start video recording'}else if(game){startOnnxVideoRecording();$('toggleGameVideo').textContent='Recording…'}updateVideoControls();if(choice==='silent')msg('Silent recording selected. Only the board video will be recorded. Move detection, PGN updates and move snapshots are paused.');else if(choice==='yes')msg('Video recording with ONNX move detection selected.');};
+$('recordVideo').onchange=()=>{const choice=$('recordVideo').value;if(choice==='no'){stopOnnxVideoRecording();$('toggleGameVideo').textContent='Start video recording'}else if(choice==='yes'&&game){startOnnxVideoRecording();$('toggleGameVideo').textContent='Recording…'}if(choice==='silent'){onnxSilentObservedPhoto=null;onnxSilentPendingPhoto=false;onnxSilentLastSavedPhoto=null;msg('Silent mode: photos are saved with a beep after each settled board change. Video is optional; use Start video recording if wanted.')}else if(choice==='yes')msg('Video recording with ONNX move detection selected.');updateVideoControls();};
 async function downloadOnnxMoveImages(){
  if(!onnxMoveImages.length&&!onnxPieceReferences.length){msg('No ONNX images or reference pictures have been saved.');return}
  if(!window.JSZip){msg('ZIP library is unavailable. Check your internet connection and try again.');return}
@@ -460,7 +505,7 @@ function initialPositionProblems(placement){
 
 function startOnnxGame(placement,orientation,custom){
  const fen=onnxFen(placement,'w');const g=new Chess();if(!g.load(fen)){msg('The detected board cannot be loaded as a chess position. Correct the board and rescan.');return false;}
- game=g;onnxLastFen=game.fen();onnxLastOrientation=orientation;captureOnnxPieceReferences(placement,orientation);startOnnxVideoRecording();onnxCurrentSegment={start:onnxLastFen,moves:[]};onnxSegments.push(onnxCurrentSegment);onnxInitialPending=null;onnxLastPhoto=latestFlatPixels?new Uint8ClampedArray(latestFlatPixels):null;onnxLastInferencePhoto=onnxLastPhoto?new Uint8ClampedArray(onnxLastPhoto):null;onnxPendingPhoto=false;$('initialCustomStart').style.display='none';
+ game=g;onnxLastFen=game.fen();onnxLastOrientation=orientation;captureOnnxPieceReferences(placement,orientation);if($('recordVideo').value==='yes')startOnnxVideoRecording();onnxSilentObservedPhoto=null;onnxSilentPendingPhoto=false;onnxSilentLastSavedPhoto=null;onnxCurrentSegment={start:onnxLastFen,moves:[]};onnxSegments.push(onnxCurrentSegment);onnxInitialPending=null;onnxLastPhoto=latestFlatPixels?new Uint8ClampedArray(latestFlatPixels):null;onnxLastInferencePhoto=onnxLastPhoto?new Uint8ClampedArray(onnxLastPhoto):null;onnxPendingPhoto=false;$('initialCustomStart').style.display='none';
  st(2,'position read ✓','ok');st(3,custom?'custom start accepted':'starting FEN verified ✓','ok');st(4,'ready','ok');$('modelStatus').textContent='ONNX model active · orientation: '+orientation+' · Zen move comparison enabled';showMoves();drawPos(null);prog(1);msg(custom?'Non-initial position detected. ONNX piece placement loaded. White to move is the safe default; castling and en-passant rights are unknown from a still image.':'Initial position detected. Zen Mind and ONNX move comparison is active.');spk(custom?'Non-initial position detected.':'Initial position detected.');return true;
 }
 $('initialCustomStart').onclick=()=>{if(onnxInitialPending)startOnnxGame(onnxInitialPending,onnxLastOrientation,true)};
@@ -551,8 +596,8 @@ async function collectConflictEvidence(data){
  }
  data.onnxScanResults=onnxRuns;
  data.zenScanResults=zenRuns;
- data.onnxCandidates=onnxRuns[1];
- data.zenCandidates=zenRuns[1];
+ data.onnxCandidates=onnxRuns[0];
+ data.zenCandidates=zenRuns[0];
  data.rankedCandidates=rankConflictCandidates(data);
 }
 function autoResolveOnnxZen(){
@@ -681,7 +726,7 @@ async function onnxStep(){
  if(onnxBusy||!onnxSession||onnxConflictOpen)return;
  try{
   warp();
-  if($('recordVideo').value==='silent'){updateOnnxVideoFrame();return;}
+  if($('recordVideo').value==='silent'&&game){silentBoardPhotoStep();return;}
   const photo=new Uint8ClampedArray(latestFlatPixels),now=performance.now();
   if(!onnxObservedPhoto){onnxObservedPhoto=photo;onnxPendingPhoto=true;onnxPendingSince=now;return;}
   const drift=photographDifference(onnxObservedPhoto,photo),sorted=Array.from(drift).sort((a,b)=>a-b),noise=sorted[32]||0,active=drift.filter(v=>v>Math.max(2.4,noise*2.3)).length;
