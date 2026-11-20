@@ -110,7 +110,7 @@ small{color:var(--mut)}
  <div id="moveConflictPanel"><h2 id="moveConflictTitle">Scanner disagreement</h2>
  <p id="moveConflictMessage">Zen Mind and ONNX disagree. Choose how to resolve the position.</p>
  <div class="row" style="align-items:end;gap:10px;margin:12px 0">
-  <label for="autoResolveChoice" style="flex:1"><strong>Auto resolution</strong><br><select id="autoResolveChoice" style="width:100%;padding:10px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="no" selected>No</option><option value="yes">Yes</option></select></label>
+  <label for="autoResolveChoice" style="flex:1"><strong>Auto resolution</strong><br><select id="autoResolveChoice" style="width:100%;padding:10px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="no">No</option><option value="yes" selected>Yes</option></select></label>
   <button type="button" id="resolveConflict" class="p">Resolve</button>
  </div>
  <div id="conflictManual" style="display:none">
@@ -461,7 +461,7 @@ function showMoveConflict(data){
  data.rankedCandidates=data.rankedCandidates||rankConflictCandidates(data);
  onnxConflict=data;onnxConflictOpen=true;
  $('moveConflictMessage').textContent=data.reason+' Both scanners were repeated twice. Percentages combine ONNX occupancy/colour evidence, Zen visual move evidence, repeat consistency and PGN legality. Choose Yes for automatic resolution or No to select manually.';
- $('conflictChoices').innerHTML='';$('conflictManual').style.display='none';$('autoResolveChoice').value='no';
+ $('conflictChoices').innerHTML='';$('conflictManual').style.display='none';$('autoResolveChoice').value='yes';
  const add=(label,move,source)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=()=>commitOnnxMove(move,source);$('conflictChoices').appendChild(b)};
  data.rankedCandidates.forEach(x=>add(x.move.san+' — '+x.percent.toFixed(1)+'%  (ONNX '+x.onnxHits+'/'+(data.onnxScanResults||[]).length+', Zen '+x.zenHits+'/'+(data.zenScanResults||[]).length+')',x.move,'manual scanner selection'));
  if(!data.rankedCandidates.length){
