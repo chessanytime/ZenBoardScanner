@@ -352,7 +352,7 @@ function cameraBoardCaptureSource(){
  if(boardToCamera.some(v=>!Number.isFinite(v)))return null;
  return {data:ctx.getImageData(0,0,source.width,source.height).data,width:source.width,height:source.height,boardToCamera};
 }
-function cameraBoardPng(source,col,row,size,span=1){
+function cameraBoardPng(source,col,row,size,span=1,format='image/png'){
  if(!source)return null;
  const canvas=document.createElement('canvas');canvas.width=canvas.height=size;
  const ctx=canvas.getContext('2d'),out=ctx.createImageData(size,size),dst=out.data,src=source.data,w=source.width,h=source.height;
@@ -362,7 +362,7 @@ function cameraBoardPng(source,col,row,size,span=1){
   const ix=Math.max(0,Math.min(w-1,Math.round(sx))),iy=Math.max(0,Math.min(h-1,Math.round(sy))),a=(iy*w+ix)*4,o=(y*size+x)*4;
   dst[o]=src[a];dst[o+1]=src[a+1];dst[o+2]=src[a+2];dst[o+3]=src[a+3];
  }
- ctx.putImageData(out,0,0);return canvas.toDataURL('image/jpeg',.72).split(',')[1];
+ ctx.putImageData(out,0,0);return canvas.toDataURL(format,format==='image/jpeg'?.72:undefined).split(',')[1];
 }
 function captureOnnxPieceReferences(placement,orientation){
  if(onnxPieceReferences.length||!placement)return;
@@ -386,7 +386,7 @@ function photoClickBeep(){
 function captureSilentBoardSnapshot(){
  const source=cameraBoardCaptureSource();if(!source)return null;
  // Capture the complete 8x8 board. A smaller JPEG keeps the shutter path light.
- const data=cameraBoardPng(source,0,0,512,8);if(!data)return null;
+ const data=cameraBoardPng(source,0,0,512,8,'image/jpeg');if(!data)return null;
  const when=new Date(),stamp=timestampFileStamp(when),index=onnxMoveImages.length+1;
  const name='silent_board_'+String(index).padStart(4,'0')+'_'+stamp+'.jpg';
  const item={name,data,timestamp:timestampIso(when),source:'original camera, full 8x8 board'};
