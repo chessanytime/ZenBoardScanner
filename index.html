@@ -450,7 +450,7 @@ function autoResolveOnnxZen(){
  const ranked=onnxConflict.rankedCandidates||rankConflictCandidates(onnxConflict);
  const best=ranked[0],runner=ranked[1];
  const gap=best?best.percent-(runner?.percent||0):0;
- const confident=!!best&&(ranked.length===1||(best.percent>=62&&gap>=15));
+ const confident=!!best&&best.onnxHits>0&&best.zenHits>0&&(ranked.length===1||(best.percent>=62&&gap>=15));
  if(!confident){
   $('moveConflictMessage').textContent='Auto resolution is not confident enough. Select No to review the legal move options and their evidence percentages.';
   revealManualConflictOptions();return false;
@@ -543,7 +543,7 @@ async function onnxStep(){
   onnxObservedPhoto=photo;
   if(!onnxPendingPhoto||now-onnxPendingSince<450)return;
   if(onnxLastInferencePhoto){const since=photographDifference(onnxLastInferencePhoto,photo);if(since.every(v=>v<2.2)){onnxPendingPhoto=false;return;}}
-  onnxBusy=true;onnxPendingPhoto=false;st(2,'one ONNX inference…');const result=await predictOnnxPlacement();if(!result.placement)throw new Error('Model returned an invalid board placement.');onnxLastOrientation=result.orientation;onnxLastInferencePhoto=photo;drawOnnxPlacement(result.placement);await onnxAcceptPosition(result.placement,result.orientation);
+  onnxBusy=true;onnxPendingPhoto=false;st(2,'one ONNX inference…');const result=await predictOnnxPlacement();if(!result.placement)throw new Error('Model returned an invalid board placement.');onnxLastOrientation=result.orientation;onnxLastInferencePhoto=photo;await onnxAcceptPosition(result.placement,result.orientation);
  }catch(e){console.error(e);msg('ONNX inference error: '+e.message)}finally{onnxBusy=false;}
 }
 
