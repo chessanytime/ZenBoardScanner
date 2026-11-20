@@ -508,11 +508,20 @@ function showMoveConflict(data){
  // Yes: resolve automatically without asking. No: show manual choices.
  if($('autoResolveChoice').value==='yes'){
   if(autoResolveOnnxZen())return;
+  // Never request a manual move while automatic resolution is enabled.
+  // Keep the previous PGN position and wait for the board to change again.
+  onnxConflict=null;onnxConflictOpen=false;
+  $('moveConflict').classList.remove('open');
+  if(latestFlatPixels)onnxObservedPhoto=new Uint8ClampedArray(latestFlatPixels);
+  onnxPendingPhoto=false;onnxPendingSince=0;
+  st(4,'waiting for clearer board evidence','bad');
+  msg('Could not confirm this move confidently. No move was recorded. The scanner will keep waiting; make sure the pieces are settled and try the move again.');
+  return;
  }else{
   $('moveConflictMessage').textContent='Manual resolution is enabled. Choose a suggested move or enter the move yourself.';
   revealManualConflictOptions();
+  $('moveConflict').classList.add('open');
  }
- $('moveConflict').classList.add('open');
 }
 function acceptOnnxCorrection(placement,orientation){
  const turn=game.turn()==='w'?'b':'w',fen=onnxFen(placement,turn),g=new Chess();if(!g.load(fen)){msg('ONNX board is not a valid FEN.');return false;}const previous=game.fen();game=g;onnxLastFen=game.fen();onnxLastOrientation=orientation;onnxCurrentSegment={start:onnxLastFen,moves:[]};onnxSegments.push(onnxCurrentSegment);physicalMoveLog.push({label:'[User accepted ONNX position correction]',fen:onnxLastFen,previousFen:previous,illegal:true});hasIllegalMoves=true;onnxLastPhoto=new Uint8ClampedArray(onnxConflict.photo);onnxLastInferencePhoto=new Uint8ClampedArray(onnxLastPhoto);onnxConflict=null;closeMoveConflict();showMoves();drawPos(null);msg('User accepted ONNX position as a new PGN segment.');return true;
@@ -574,7 +583,7 @@ async function onnxAcceptPosition(placement,orientation,occupancy){
  const data={placement,orientation,photo:new Uint8ClampedArray(latestFlatPixels),onnxCandidates,zenCandidates,reason,allowNewSegment:true};
  st(4,'rechecking ONNX + Zen twice…','bad');
  $('moveConflictMessage').textContent='Scanner disagreement detected. Rechecking both scanners twice…';
- $('moveConflict').classList.add('open');
+ if($('autoResolveChoice').value==='no')$('moveConflict').classList.add('open');
  try{
   await collectConflictEvidence(data);
  }catch(e){
