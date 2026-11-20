@@ -464,7 +464,7 @@ function autoResolveOnnxZen(){
 function showMoveConflict(data){
  data.rankedCandidates=data.rankedCandidates||rankConflictCandidates(data);
  onnxConflict=data;onnxConflictOpen=true;
- $('moveConflictMessage').textContent=data.reason+' Both scanners were repeated twice. Percentages combine ONNX occupancy/colour evidence, Zen visual move evidence, repeat consistency and PGN legality. Choose Yes for automatic resolution or No to select manually.';
+ $('moveConflictMessage').textContent=data.reason+' Both scanners were repeated twice. Percentages combine ONNX occupancy/colour evidence, Zen visual move evidence, repeat consistency and PGN legality.';
  $('conflictChoices').innerHTML='';$('conflictManual').style.display='none';$('autoResolveChoice').value='yes';
  const add=(label,move,source)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=()=>commitOnnxMove(move,source);$('conflictChoices').appendChild(b)};
  data.rankedCandidates.forEach(x=>add(x.move.san+' — '+x.percent.toFixed(1)+'%  (ONNX '+x.onnxHits+'/'+(data.onnxScanResults||[]).length+', Zen '+x.zenHits+'/'+(data.zenScanResults||[]).length+')',x.move,'manual scanner selection'));
@@ -472,7 +472,11 @@ function showMoveConflict(data){
   const p=document.createElement('p');p.textContent='No legal candidate is supported by the scanner evidence. Enter the move manually or keep waiting.';$('conflictChoices').appendChild(p);
  }
  if(data.placement&&data.allowNewSegment){const b=document.createElement('button');b.type='button';b.textContent='Accept ONNX board as a new PGN position segment';b.onclick=()=>acceptOnnxCorrection(data.placement,data.orientation);$('conflictChoices').appendChild(b)}
- $('conflictMove').value='';$('moveConflict').classList.add('open');
+ $('conflictMove').value='';
+ // Auto mode resolves silently when the evidence is strong enough.
+ // Only show the dialog when automatic resolution cannot safely choose a move.
+ if($('autoResolveChoice').value==='yes'&&autoResolveOnnxZen())return;
+ $('moveConflict').classList.add('open');
 }
 $('resolveConflict').onclick=()=>{
  if($('autoResolveChoice').value==='yes'){autoResolveOnnxZen();}
