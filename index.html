@@ -46,15 +46,15 @@ small{color:var(--mut)}
 #conflictChoices button{width:100%;text-align:left}
 #initialCustomStart{display:none;margin:8px 0}
 </style></head><body>
-<h1>Zen Mind — ONNX Chess Move Scanner</h1>
-<section style="border:1px solid #8fa0ad55;border-radius:10px;padding:10px;margin:10px 0;background:var(--card)"><strong>ONNX board recognition</strong><div class="row"><input type="file" id="onnxFile" accept=".onnx" style="min-width:180px;flex:1"><input type="url" id="onnxUrl" value="https://huggingface.co/joelseytre/chessq-lite/resolve/fa83b74862c96c137f59ab4d11ed9431a8efbad5/cq-vit-s-644-v5-seed1-onnx-int8-r1.onnx" placeholder="ONNX model URL" style="min-width:180px;flex:1"><button type="button" id="loadOnnx">Load from internet</button></div><small id="onnxStatus">Choose a local .onnx file or load the prefilled ChessQueries Lite model from the internet. ONNX reads the standard starting position directly; no empty-board calibration is required.</small><button type="button" id="initialCustomStart">Use detected board as a custom starting position</button></section>
+<h1>Zen Mind — Chessboard Photo Capture</h1>
+<section id="modelSetup" style="display:none"><strong>ONNX board recognition</strong><div class="row"><input type="file" id="onnxFile" accept=".onnx" style="min-width:180px;flex:1"><input type="url" id="onnxUrl" value="https://huggingface.co/joelseytre/chessq-lite/resolve/fa83b74862c96c137f59ab4d11ed9431a8efbad5/cq-vit-s-644-v5-seed1-onnx-int8-r1.onnx" placeholder="ONNX model URL" style="min-width:180px;flex:1"><button type="button" id="loadOnnx">Load from internet</button></div><small id="onnxStatus">Choose a local .onnx file or load the prefilled ChessQueries Lite model from the internet. ONNX reads the standard starting position directly; no empty-board calibration is required.</small><button type="button" id="initialCustomStart">Use detected board as a custom starting position</button></section>
 <div id="stage"><video id="v" playsinline muted autoplay></video><canvas id="ov"></canvas></div>
 <div class="row" id="zoomControls" style="justify-content:center;margin:8px 0"><button type="button" id="zoomOut" disabled>Zoom −</button><button type="button" id="zoomIn" disabled>Zoom +</button></div>
 <div class="row" id="borderControls" style="justify-content:center;margin:6px 0"><button type="button" id="adjustBorder">Adjust board border</button><button type="button" id="b3">Lock border now</button></div>
 <div class="row" id="verifyInitialControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="verifyInitialPieces"><strong>Piece detection</strong></label><select id="verifyInitialPieces" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="no" selected>No</option><option value="yes">Yes</option></select></div>
 <div class="row" id="saveMoveImagesControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="saveMoveImages"><strong>Save ONNX image per move</strong></label><select id="saveMoveImages" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="no">No</option><option value="yes" selected>Yes</option></select></div>
 <div class="row" style="justify-content:center;margin:6px 0"><button type="button" id="downloadMoveImages" style="display:none">Download game images + references (.zip)</button><small id="moveImageStatus">Move image saving is off.</small></div>
-<div class="row" id="recordVideoControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="recordVideo"><strong>Record ONNX board video</strong></label><select id="recordVideo" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="no" selected>No</option><option value="yes">Yes + detect moves</option><option value="silent">Silent recording only</option></select><button type="button" id="toggleGameVideo">Start video recording</button><button type="button" id="stopGameVideo" style="display:none">Stop recording</button><button type="button" id="downloadGameVideo" style="display:none">Download game video</button><small id="videoStatus">Video recording is off.</small></div>
+<div id="legacyVideoControls" hidden><select id="recordVideo"><option value="no">No</option></select><button id="toggleGameVideo"></button><button id="stopGameVideo"></button><button id="downloadGameVideo"></button><small id="videoStatus"></small></div>
 <div class="row" id="decisionSpeedControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="decisionSpeed"><strong>Move detection delay</strong></label><select id="decisionSpeed" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="1" selected>1 second (fast)</option><option value="2">2 seconds</option><option value="3">3 seconds</option><option value="4">4 seconds</option><option value="5">5 seconds (careful)</option></select><small>Wait after a board change before ONNX reads it. Actual processing time depends on your device.</small></div>
 <div class="row" id="autoResolveControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="autoResolveChoice"><strong>Auto resolver</strong></label><select id="autoResolveChoice" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="yes" selected>Yes</option><option value="no">No</option></select></div>
 <div id="msg">Loading the scanner and requesting camera access. Keep the full chessboard and all 4 corners in view.</div>
@@ -84,7 +84,7 @@ small{color:var(--mut)}
 <small>Deletes the entire liveChessGames collection. This cannot be undone. Use only with a trusted broadcaster account.</small>
 </section>
 <div class="row">
-<button class="p" id="b1">Start camera</button>
+<button class="p" id="b1">Start camera</button><button type="button" class="p" id="takePhoto" disabled>📷 Take picture</button><label style="display:flex;align-items:center;gap:6px;padding:8px"><input type="checkbox" id="photoBeep"> Beep</label>
 <button id="resetCamera">Reset camera</button>
 
 <button id="b2">Auto-detect board</button>
@@ -251,7 +251,7 @@ for(let q=0;q<64;q++){for(let k=0;k<48;k++)A[q*K+k]=Math.min(255,F[q*K+k]*g);A[q
 
 /* ---------- ONNX position recognition ---------- */
 let onnxSession=null, onnxBusy=false,onnxProvider='wasm';
-let onnxMoveImages=[],onnxPieceReferences=[],onnxVideoRecorder=null,onnxVideoChunks=[],onnxVideoBlob=null,onnxVideoCanvas=null,onnxVideoCtx=null,onnxVideoStream=null,onnxVideoStartedAt=null,onnxLastSavedBoardPhoto=null,onnxSilentObservedPhoto=null,onnxSilentPendingPhoto=false,onnxSilentPendingSince=0,onnxSilentLastSavedPhoto=null;
+let onnxMoveImages=[],onnxPieceReferences=[],onnxVideoRecorder=null,onnxVideoChunks=[],onnxVideoBlob=null,onnxVideoCanvas=null,onnxVideoCtx=null,onnxVideoStream=null,onnxVideoStartedAt=null,onnxLastSavedBoardPhoto=null;
 let onnxLastOrientation='white', onnxLastFen='', onnxSegments=[], onnxCurrentSegment=null;
 let onnxLastPhoto=null,onnxObservedPhoto=null,onnxPendingPhoto=false,onnxPendingSince=0,onnxLastInferencePhoto=null,onnxInitialPending=null,onnxConflict=null,onnxConflictOpen=false;
 const ONNX_SIZE=644, ONNX_PIECES='.PNBRQKpnbrqk';
@@ -329,7 +329,7 @@ function onnxFen(placement,turn='w'){
 }
 function onnxReset(){
  if(onnxVideoRecorder&&onnxVideoRecorder.state!=='inactive')stopOnnxVideoRecording();
- onnxMoveImages=[];onnxPieceReferences=[];onnxLastSavedBoardPhoto=null;onnxSilentObservedPhoto=null;onnxSilentPendingPhoto=false;onnxSilentPendingSince=0;onnxSilentLastSavedPhoto=null;updateMoveImageControls();
+ onnxMoveImages=[];onnxPieceReferences=[];onnxLastSavedBoardPhoto=null;updateMoveImageControls();
  closeMoveConflict();onnxLastPhoto=null;onnxObservedPhoto=null;onnxPendingPhoto=false;onnxPendingSince=0;onnxLastInferencePhoto=null;onnxInitialPending=null;onnxConflict=null;
  onnxLastFen='';onnxSegments=[];onnxCurrentSegment=null;game=null;physicalMoveLog=[];hasIllegalMoves=false;showMoves();$('initialCustomStart').style.display='none';drawPos(null);
 }
@@ -384,36 +384,9 @@ function captureOnnxPieceReferences(placement,orientation){
  updateMoveImageControls();
 }
 function photoClickBeep(){
- const play=()=>{if(!ac)return;try{const o=ac.createOscillator(),g=ac.createGain(),at=ac.currentTime;o.type='sine';o.frequency.setValueAtTime(1046,at);g.gain.setValueAtTime(.0001,at);g.gain.exponentialRampToValueAtTime(.22,at+.008);g.gain.exponentialRampToValueAtTime(.0001,at+.13);o.connect(g);g.connect(ac.destination);o.start(at);o.stop(at+.15)}catch(e){console.warn('Photo beep unavailable:',e)}};
- if(!ac)return;if(ac.state==='suspended')ac.resume().then(play).catch(()=>{});else play();
-}
-function captureSilentBoardSnapshot(){
- const source=cameraBoardCaptureSource();if(!source)return null;
- // Capture the complete 8x8 board. A smaller JPEG keeps the shutter path light.
- const data=cameraBoardPng(source,0,0,512,8,'image/jpeg');if(!data)return null;
- const when=new Date(),stamp=timestampFileStamp(when),index=onnxMoveImages.length+1;
- const name='silent_board_'+String(index).padStart(4,'0')+'_'+stamp+'.jpg';
- const item={name,data,timestamp:timestampIso(when),source:'original camera, full 8x8 board'};
- onnxMoveImages.push(item);updateMoveImageControls();photoClickBeep();return item;
-}
-function silentBoardPhotoStep(){
- updateOnnxVideoFrame();
- const photo=new Uint8ClampedArray(latestFlatPixels),now=performance.now();
- if(!onnxSilentObservedPhoto){onnxSilentObservedPhoto=photo;return}
- const drift=photographDifference(onnxSilentObservedPhoto,photo),sorted=Array.from(drift).sort((a,b)=>a-b),noise=sorted[32]||0,active=drift.filter(v=>v>Math.max(2.4,noise*2.3)).length;
- const changed=active>=2||Math.max(...drift)>6;
- onnxSilentObservedPhoto=photo;
- if(changed){
-  if(!onnxSilentPendingPhoto){
-   onnxSilentPendingPhoto=true;
-   const saved=captureSilentBoardSnapshot();
-   if(saved)onnxSilentLastSavedPhoto=photo;
-  }
-  onnxSilentPendingSince=now;
-  return;
- }
- // Re-arm after a brief quiet interval; this is not a capture delay.
- if(onnxSilentPendingPhoto&&now-onnxSilentPendingSince>=250)onnxSilentPendingPhoto=false;
+ if(!$('photoBeep').checked||!ac)return;
+ const play=()=>{try{const o=ac.createOscillator(),g=ac.createGain(),at=ac.currentTime;o.type='sine';o.frequency.setValueAtTime(1046,at);g.gain.setValueAtTime(.0001,at);g.gain.exponentialRampToValueAtTime(.22,at+.008);g.gain.exponentialRampToValueAtTime(.0001,at+.13);o.connect(g);g.connect(ac.destination);o.start(at);o.stop(at+.15)}catch(e){console.warn('Photo beep unavailable:',e)}};
+ if(ac.state==='suspended')ac.resume().then(play).catch(()=>{});else play();
 }
 function captureOnnxObservedBoardImage(placement,photo){
  if($('saveMoveImages').value!=='yes'||!photo||!onnxCanvas.width)return null;
@@ -476,6 +449,14 @@ async function downloadOnnxMoveImages(){
  try{const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='onnx_game_images_'+timestampFileStamp()+'.zip';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);msg('Downloaded '+onnxMoveImages.length+' move images and '+onnxPieceReferences.length+' starting-piece references.')}
  catch(e){console.error(e);msg('Could not create the image ZIP: '+e.message)}
 }
+$('takePhoto').onclick=()=>{
+ if(!stream||mode!=='photo'){msg('Start the camera, find the board and lock its border first.');return}
+ const source=cameraBoardCaptureSource();if(!source){msg('Could not capture the board. Check all four corners.');return}
+ const data=cameraBoardPng(source,0,0,512,8,'image/jpeg');if(!data){msg('Picture capture failed.');return}
+ const when=new Date(),stamp=timestampFileStamp(when),index=onnxMoveImages.length+1,name='board_'+String(index).padStart(4,'0')+'_'+stamp+'.jpg';
+ onnxMoveImages.push({name,data,timestamp:timestampIso(when),source:'manual full-board photo'});updateMoveImageControls();photoClickBeep();
+ msg('Picture '+index+' saved. Take another whenever you are ready.');
+};
 $('downloadMoveImages').onclick=downloadOnnxMoveImages;
 $('saveMoveImages').onchange=updateMoveImageControls;
 updateMoveImageControls();updateVideoControls();
@@ -734,7 +715,7 @@ async function onnxStep(){
  if(onnxBusy||!onnxSession||onnxConflictOpen)return;
  try{
   warp();
-  if($('recordVideo').value==='silent'&&game){silentBoardPhotoStep();return;}
+  
   const photo=new Uint8ClampedArray(latestFlatPixels),now=performance.now();
   if(!onnxObservedPhoto){onnxObservedPhoto=photo;onnxPendingPhoto=true;onnxPendingSince=now;return;}
   const drift=photographDifference(onnxObservedPhoto,photo),sorted=Array.from(drift).sort((a,b)=>a-b),noise=sorted[32]||0,active=drift.filter(v=>v>Math.max(2.4,noise*2.3)).length;
@@ -751,7 +732,7 @@ async function onnxStep(){
 function startSearch(m){mode=m||'search';found=0;lastQ=null;t0=Date.now();st(1,m=='manual'?'drag corners, then Lock':'searching…');st(2,'waiting');st(3,'waiting');st(4,'waiting');prog(0);
 msg(m=='manual'?'Drag the 4 white dots onto the board corners, then tap “Lock border now”.':'Searching for the board… show the full chessboard with all 4 corners in view. You can also drag the dots yourself.')}
 function extOut(){const H=hom([[0,0],[8,0],[8,8],[0,8]],rq());return[[-1,-1],[9,-1],[9,9],[-1,9]].some(p=>{const[x,y]=ap(H,p[0],p[1]);return x<0||y<0||x>O.width||y>O.height})}
-function lock(a){if(!onnxSession){msg('Load the ONNX model before locking the board.');return}occModelReady=false;occModel=null;mode='onnx';rot=0;$('viewSide').value='0';$('viewSide').disabled=true;$('b4').disabled=true;onnxReset();prevF=null;st(1,'locked ✓','ok');st(2,'waiting for one ONNX read');st(3,'checking standard setup');st(4,'waiting');prog(0);msg('Board locked. Waiting for one settled ONNX reading. No empty-board calibration or three-reading confirmation is used.');a?foundSnd():beep(660,.12,.45)}
+function lock(a){occModelReady=false;occModel=null;mode='photo';rot=0;$('takePhoto').disabled=false;st(1,'locked ✓','ok');st(2,'ready','ok');prog(1);msg('Board border locked. Click Take picture whenever you want to save the board.');a?foundSnd():beep(660,.12,.45)}
 function detectByContours(){
  if(!(window.cv&&cv.Mat&&cv.findContours))return null;
  let src,gray,blur,edges,contours,hierarchy;
@@ -1716,11 +1697,11 @@ function illegalFenText(){return physicalMoveLog.filter(x=>x.illegal).map((x,i)=
 function refreshIllegalExport(){const t=illegalFenText();$('exportIllegalFen').style.display=t?'':'none';$('illegalFenBox').style.display=t?'block':'none';$('illegalFenBox').value=t}
 $('exportIllegalFen').onclick=()=>{const t=illegalFenText();if(!t)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:'text/plain'}));a.download='illegal-move-positions.txt';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)};
 $('whiteName').addEventListener('input',()=>{});$('blackName').addEventListener('input',()=>{});
-$('b1').onclick=()=>{if(!onnxSession){msg('Load the ONNX model first.');return}cam()};
-$('resetCamera').onclick=async()=>{if(!onnxSession){msg('Load the ONNX model first.');return}selectedCamera=cameraSelect.value;await cam();if(stream)msg('Camera restarted and zoom reset. Check the picture, adjust the border, then lock it.')};
+$('b1').onclick=()=>cam();
+$('resetCamera').onclick=async()=>{selectedCamera=cameraSelect.value;await cam();if(stream)msg('Camera restarted. Adjust the border, then lock it.')};
 $('zoomIn').onclick=()=>setCameraZoom((cameraZoom||1)+Math.max(.25,((cameraZoomCaps?.max||1)-(cameraZoomCaps?.min||1))/10));
 $('zoomOut').onclick=()=>setCameraZoom((cameraZoom||1)-Math.max(.25,((cameraZoomCaps?.max||1)-(cameraZoomCaps?.min||1))/10));
-$('adjustBorder').onclick=()=>{if(!stream){msg('Start the camera first, then adjust the border.');return}if(mode==='onnx'||mode==='rec'||mode==='pieces'){msg('To avoid losing the current game, border adjustment is available before locking the board. Reset camera to begin a fresh setup, then adjust the border before locking.');return}warpMap=null;warpMapKey='';startSearch('manual')};
+$('adjustBorder').onclick=()=>{if(!stream){msg('Start the camera first, then adjust the border.');return}warpMap=null;warpMapKey='';$('takePhoto').disabled=true;startSearch('manual')};
 $('b2').onclick=()=>{if(stream){$('viewSide').disabled=false;$('b4').disabled=false;startSearch()}};
 $('b3').onclick=()=>{if(stream&&(mode=='search'||mode=='manual'))lock(false)};
 $('b4').onclick=()=>{if(mode==='onnx'){msg('Board orientation is determined exclusively by the ONNX direction output.');return}rot=(rot+1)%4;$('viewSide').value=String(rot);if(mode=='scan'){n=0;acc=null}else if(mode==='rec'||mode==='pieces'){mode='scan';n=0;acc=null;msg('Orientation changed: update board view before continuing.')}else msg('Board rotated 90°.')};
@@ -1877,24 +1858,7 @@ $('stopBroadcastBtn').onclick=stopLive;
 $('whiteName').addEventListener('input',publishLive);
 $('blackName').addEventListener('input',publishLive);
 
-async function autoStartScanner(){
- try{
-  if(!onnxSession){
-   const url=$('onnxUrl').value.trim();
-   $('onnxStatus').textContent='Loading ONNX model automatically…';
-   const response=await fetch(url);
-   if(!response.ok)throw new Error('Model download failed: HTTP '+response.status);
-   await loadOnnxModel(await response.arrayBuffer(),url.split('/').pop());
-   if(!onnxSession)throw new Error('ONNX model could not be initialized.');
-  }
-  if(!stream)await cam();
-  if(stream)msg('Camera is on. Automatically searching for and verifying the chessboard…');
- }catch(e){
-  console.warn('Automatic scanner startup:',e);
-  msg('Automatic startup needs permission or setup: '+e.message+' Use Load from internet / Start camera if needed.');
- }
-}
-window.addEventListener('load',()=>setTimeout(autoStartScanner,250));
+window.addEventListener('load',()=>{if(navigator.mediaDevices?.getUserMedia)msg('Press Start camera to begin.');});
 const loop=()=>{const t=Date.now();if(stream&&V.videoWidth&&W.width){wc.drawImage(V,0,0,W.width,W.height);try{({search:searchStep,scan:scanStep,pieces:pieceStep,rec:recStep,onnx:onnxStep}[mode]||(()=>{}))();if(onnxVideoRecorder&&onnxVideoRecorder.state==='recording')updateOnnxVideoFrame()}catch(e){console.error(e)}}
 setTimeout(loop,Math.max(20,(mode=='rec'?65:250)-(Date.now()-t)))};loop();
 requestAnimationFrame(draw);
