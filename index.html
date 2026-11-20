@@ -707,16 +707,27 @@ async function onnxStep(){
   if(onnxBusy||!onnxSession||onnxConflictOpen)return;
   try{
    warp();
-   const photo=new Uint8ClampedArray(latestFlatPixels),now=performance.now();
-   // First frame: make exactly one ONNX reading immediately. No empty-board
-   // calibration or multi-reading confirmation is required.
+   let photo=new Uint8ClampedArray(latestFlatPixels);
+   const now=performance.now();
+   // First frame: read immediately. If the detected occupancy is not the
+   // standard starting setup, wait 3 seconds and retry once before accepting it.
    if(!onnxObservedPhoto){
     onnxObservedPhoto=photo;
     onnxPendingPhoto=false;
     onnxBusy=true;
     st(2,'one ONNX inference…');
-    const result=await predictOnnxPlacement();
+    let result=await predictOnnxPlacement();
     if(!result.placement)throw new Error('Model returned an invalid board placement.');
+    if(result.occupancy!==placementOccupancy(STD_START)){
+     st(2,'retrying non-start position in 3 seconds…');
+     msg('A non-standard starting position was detected. Checking it again in 3 seconds…');
+     await new Promise(resolve=>setTimeout(resolve,3000));
+     warp();
+     photo=new Uint8ClampedArray(latestFlatPixels);
+     result=await predictOnnxPlacement();
+     if(!result.placement)throw new Error('Model returned an invalid board placement on retry.');
+    }
+    onnxObservedPhoto=photo;
     onnxLastOrientation=result.orientation;
     onnxLastInferencePhoto=photo;
     if(game)captureOnnxObservedBoardImage(result.placement,photo);
