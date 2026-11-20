@@ -337,11 +337,9 @@ function updateMoveImageControls(){
 }
 function captureOnnxMoveImage(move,fen){
   if($('saveMoveImages').value!=='yes'||!latestFlatPixels)return;
-  const pixels=onnxConflict?.photo||latestFlatPixels;
-  const canvas=document.createElement('canvas');canvas.width=SW;canvas.height=SW;
-  const ctx=canvas.getContext('2d');const imageData=ctx.createImageData(SW,SW);imageData.data.set(pixels);ctx.putImageData(imageData,0,0);
+  // Save the exact 644x644 board crop that was passed into the latest ONNX inference.
   const safeSan=String(move.san).replace(/[^a-z0-9]+/gi,'_').replace(/^_|_$/g,'');
-  onnxMoveImages.push({name:'move_'+String(onnxMoveImages.length+1).padStart(3,'0')+'_'+safeSan+'.jpg',data:canvas.toDataURL('image/jpeg',.88).split(',')[1],san:move.san,fen});
+  onnxMoveImages.push({name:'move_'+String(onnxMoveImages.length+1).padStart(3,'0')+'_'+safeSan+'.jpg',data:onnxCanvas.toDataURL('image/jpeg',.9).split(',')[1],san:move.san,fen});
   updateMoveImageControls();
 }
 async function downloadOnnxMoveImages(){
@@ -1533,8 +1531,8 @@ function deleteRecordedLast(){
  cancelPromotion();
  if(!physicalMoveLog.length){msg('No recorded move to delete.');return}
  const last=physicalMoveLog.pop();
- if(mode==='onnx'&&onnxMoveImages.length){onnxMoveImages.pop();updateMoveImageControls();}
  if(!game.load(last.previousFen)){physicalMoveLog.push(last);msg('Could not restore the previous board position.');return}
+ if(mode==='onnx'&&onnxMoveImages.length){onnxMoveImages.pop();updateMoveImageControls();}
  if(mode==='onnx'){if(onnxCurrentSegment&&onnxCurrentSegment.moves.length)onnxCurrentSegment.moves.pop();onnxLastFen=game.fen();onnxLastPhoto=latestFlatPixels?new Uint8ClampedArray(latestFlatPixels):onnxLastPhoto;onnxLastInferencePhoto=onnxLastPhoto?new Uint8ClampedArray(onnxLastPhoto):null;}
  syncEditedPosition();msg('Deleted last move: '+last.label+'. Match the physical board before continuing.');
 }
