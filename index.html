@@ -351,7 +351,7 @@ function initialPositionProblems(placement){
 function startOnnxGame(placement,orientation,custom){
  const fen=onnxFen(placement,'w');const g=new Chess();if(!g.load(fen)){msg('The detected board cannot be loaded as a chess position. Correct the board and rescan.');return false;}
  game=g;onnxLastFen=game.fen();onnxLastOrientation=orientation;onnxCurrentSegment={start:onnxLastFen,moves:[]};onnxSegments.push(onnxCurrentSegment);onnxInitialPending=null;onnxLastPhoto=latestFlatPixels?new Uint8ClampedArray(latestFlatPixels):null;onnxLastInferencePhoto=onnxLastPhoto?new Uint8ClampedArray(onnxLastPhoto):null;onnxPendingPhoto=false;$('initialCustomStart').style.display='none';
- st(2,'position read ✓','ok');st(3,custom?'custom start accepted':'starting FEN verified ✓','ok');st(4,'ready','ok');$('modelStatus').textContent='ONNX model active · orientation: '+orientation+' · Zen move comparison enabled';showMoves();drawPos(null);prog(1);msg(custom?'User accepted the ONNX board as a custom starting position.':'Standard starting position verified by ONNX. Zen Mind and ONNX move comparison is active.');if(!custom)spk('Starting position verified. White to move.');return true;
+ st(2,'position read ✓','ok');st(3,custom?'custom start accepted':'starting FEN verified ✓','ok');st(4,'ready','ok');$('modelStatus').textContent='ONNX model active · orientation: '+orientation+' · Zen move comparison enabled';showMoves();drawPos(null);prog(1);msg(custom?'Non-initial position detected. ONNX piece placement loaded. White to move is the safe default; castling and en-passant rights are unknown from a still image.':'Initial position detected. Zen Mind and ONNX move comparison is active.');spk(custom?'Non-initial position detected.':'Initial position detected.');return true;
 }
 $('initialCustomStart').onclick=()=>{if(onnxInitialPending)startOnnxGame(onnxInitialPending,onnxLastOrientation,true)};
 function placementColorPattern(placement){
@@ -463,7 +463,7 @@ function showMoveConflict(data){
  $('moveConflictMessage').textContent=data.reason+' Both scanners were repeated twice. Percentages combine ONNX occupancy/colour evidence, Zen visual move evidence, repeat consistency and PGN legality. Choose Yes for automatic resolution or No to select manually.';
  $('conflictChoices').innerHTML='';$('conflictManual').style.display='none';$('autoResolveChoice').value='no';
  const add=(label,move,source)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=()=>commitOnnxMove(move,source);$('conflictChoices').appendChild(b)};
- data.rankedCandidates.forEach(x=>add(x.move.san+' — '+x.percent.toFixed(1)+'%  (ONNX '+x.onnxHits+'/2, Zen '+x.zenHits+'/2)',x.move,'manual scanner selection'));
+ data.rankedCandidates.forEach(x=>add(x.move.san+' — '+x.percent.toFixed(1)+'%  (ONNX '+x.onnxHits+'/'+(data.onnxScanResults||[]).length+', Zen '+x.zenHits+'/'+(data.zenScanResults||[]).length+')',x.move,'manual scanner selection'));
  if(!data.rankedCandidates.length){
   const p=document.createElement('p');p.textContent='No legal candidate is supported by the scanner evidence. Enter the move manually or keep waiting.';$('conflictChoices').appendChild(p);
  }
@@ -491,12 +491,10 @@ async function onnxAcceptPosition(placement,orientation){
   drawOnnxPlacement(placement);
   if(placement===STD_START){
    startOnnxGame(placement,orientation,false);
-   msg('Initial position detected.');
-   spk('Initial position detected.');
+
   }else{
    startOnnxGame(placement,orientation,true);
-   msg('Non-initial position detected. ONNX identified the pieces and their colours. Side to move defaults to White; castling and en-passant rights cannot be recovered from a single image.');
-   spk('Non-initial position detected.');
+
   }
   return;
  }
@@ -522,7 +520,15 @@ async function onnxAcceptPosition(placement,orientation){
  st(4,'rechecking ONNX + Zen twice…','bad');
  $('moveConflictMessage').textContent='Scanner disagreement detected. Rechecking both scanners twice…';
  $('moveConflict').classList.add('open');
- await collectConflictEvidence(data);
+ try{
+  await collectConflictEvidence(data);
+ }catch(e){
+  console.warn('Repeated scanner verification failed:',e);
+  data.onnxScanResults=[data.onnxCandidates||[]];
+  data.zenScanResults=[data.zenCandidates||[]];
+  data.rankedCandidates=rankConflictCandidates(data);
+  data.reason+=' Repeated verification was unavailable, so the first-pass evidence is shown.';
+ }
  showMoveConflict(data);
  spk('Scanner disagreement. Reviewing possible moves.');
 }
