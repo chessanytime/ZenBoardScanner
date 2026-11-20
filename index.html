@@ -704,18 +704,45 @@ async function onnxAcceptPosition(placement,orientation,occupancy){
  spk('Scanner disagreement. Reviewing possible moves.');
 }
 async function onnxStep(){
- if(onnxBusy||!onnxSession||onnxConflictOpen)return;
- try{
-  warp();
-  const photo=new Uint8ClampedArray(latestFlatPixels),now=performance.now();
-  if(!onnxObservedPhoto){onnxObservedPhoto=photo;onnxPendingPhoto=true;onnxPendingSince=now;return;}
-  const drift=photographDifference(onnxObservedPhoto,photo),sorted=Array.from(drift).sort((a,b)=>a-b),noise=sorted[32]||0,active=drift.filter(v=>v>Math.max(2.4,noise*2.3)).length;
-  const changed=active>=2||Math.max(...drift)>6;
-  if(changed){onnxPendingPhoto=true;onnxPendingSince=now;onnxObservedPhoto=photo;return;}
-  onnxObservedPhoto=photo;
-  if(!onnxPendingPhoto||now-onnxPendingSince<Number($('decisionSpeed').value||1)*1000)return;
-  if(onnxLastInferencePhoto){const since=photographDifference(onnxLastInferencePhoto,photo);if(since.every(v=>v<2.2)){onnxPendingPhoto=false;return;}}
-  onnxBusy=true;onnxPendingPhoto=false;st(2,'one ONNX inference…');const result=await predictOnnxPlacement();if(!result.placement)throw new Error('Model returned an invalid board placement.');onnxLastOrientation=result.orientation;onnxLastInferencePhoto=photo;if(game)captureOnnxObservedBoardImage(result.placement,photo);await onnxAcceptPosition(result.placement,result.orientation,result.occupancy);
+  if(onnxBusy||!onnxSession||onnxConflictOpen)return;
+  try{
+   warp();
+   const photo=new Uint8ClampedArray(latestFlatPixels),now=performance.now();
+   // First frame: make exactly one ONNX reading immediately. No empty-board
+   // calibration or multi-reading confirmation is required.
+   if(!onnxObservedPhoto){
+    onnxObservedPhoto=photo;
+    onnxPendingPhoto=false;
+    onnxBusy=true;
+    st(2,'one ONNX inference…');
+    const result=await predictOnnxPlacement();
+    if(!result.placement)throw new Error('Model returned an invalid board placement.');
+    onnxLastOrientation=result.orientation;
+    onnxLastInferencePhoto=photo;
+    if(game)captureOnnxObservedBoardImage(result.placement,photo);
+    await onnxAcceptPosition(result.placement,result.orientation,result.occupancy);
+    return;
+   }
+   const drift=photographDifference(onnxObservedPhoto,photo);
+   const sorted=Array.from(drift).sort((a,b)=>a-b),noise=sorted[32]||0;
+   // Ignore normal webcam flicker; only meaningful changes restart settling.
+   const active=drift.filter(v=>v>Math.max(3.8,noise*2.8)).length;
+   const changed=active>=3||Math.max(...drift)>9;
+   if(changed){onnxPendingPhoto=true;onnxPendingSince=now;onnxObservedPhoto=photo;return;}
+   onnxObservedPhoto=photo;
+   if(!onnxPendingPhoto||now-onnxPendingSince<Number($('decisionSpeed').value||1)*1000)return;
+   if(onnxLastInferencePhoto){
+    const since=photographDifference(onnxLastInferencePhoto,photo);
+    if(since.every(v=>v<2.2)){onnxPendingPhoto=false;return;}
+   }
+   onnxBusy=true;onnxPendingPhoto=false;st(2,'one ONNX inference…');
+   const result=await predictOnnxPlacement();
+   if(!result.placement)throw new Error('Model returned an invalid board placement.');
+   onnxLastOrientation=result.orientation;onnxLastInferencePhoto=photo;
+   if(game)captureOnnxObservedBoardImage(result.placement,photo);
+   await onnxAcceptPosition(result.placement,result.orientation,result.occupancy);
+  }catch(e){console.error(e);msg('ONNX inference error: '+e.message)}
+  finally{onnxBusy=false;}
  }catch(e){console.error(e);msg('ONNX inference error: '+e.message)}finally{onnxBusy=false;}
 }
 
