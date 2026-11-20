@@ -48,7 +48,7 @@ small{color:var(--mut)}
 <h1>Zen Mind — ONNX Chess Move Scanner</h1>
 <section style="border:1px solid #8fa0ad55;border-radius:10px;padding:10px;margin:10px 0;background:var(--card)"><strong>ONNX board recognition</strong><div class="row"><input type="file" id="onnxFile" accept=".onnx" style="min-width:180px;flex:1"><input type="url" id="onnxUrl" value="https://huggingface.co/joelseytre/chessq-lite/resolve/fa83b74862c96c137f59ab4d11ed9431a8efbad5/cq-vit-s-644-v5-seed1-onnx-int8-r1.onnx" placeholder="ONNX model URL" style="min-width:180px;flex:1"><button type="button" id="loadOnnx">Load from internet</button></div><small id="onnxStatus">Choose a local .onnx file or load the prefilled ChessQueries Lite model from the internet. ONNX reads the standard starting position directly; no empty-board calibration is required.</small><button type="button" id="initialCustomStart">Use detected board as a custom starting position</button></section>
 <div id="stage"><video id="v" playsinline muted autoplay></video><canvas id="ov"></canvas></div>
-<div id="msg">Load the ONNX model, tap “Start camera”, and show the full chessboard with all 4 corners in view.</div>
+<div id="msg">Loading the scanner and requesting camera access. Keep the full chessboard and all 4 corners in view.</div>
 <div id="barw"><div id="bar"></div></div>
 <small id="modelStatus">ONNX model: waiting to be loaded</small><div id="last">—</div>
 <div id="moves">Recorded moves will appear here</div>
@@ -310,6 +310,8 @@ async function predictOnnxPlacement(){
 }
 function onnxFen(placement,turn='w'){
  const standard='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR';
+ // A standard untouched start has known rights. A custom still image does not
+ // contain the history needed to prove castling or en-passant rights.
  const castling=placement===standard?'KQkq':'-';
  return placement+' '+turn+' '+castling+' - 0 1';
 }
@@ -352,13 +354,26 @@ function startOnnxGame(placement,orientation,custom){
  st(2,'position read ✓','ok');st(3,custom?'custom start accepted':'starting FEN verified ✓','ok');st(4,'ready','ok');$('modelStatus').textContent='ONNX model active · orientation: '+orientation+' · Zen move comparison enabled';showMoves();drawPos(null);prog(1);msg(custom?'User accepted the ONNX board as a custom starting position.':'Standard starting position verified by ONNX. Zen Mind and ONNX move comparison is active.');if(!custom)spk('Starting position verified. White to move.');return true;
 }
 $('initialCustomStart').onclick=()=>{if(onnxInitialPending)startOnnxGame(onnxInitialPending,onnxLastOrientation,true)};
+function placementColorPattern(placement){
+ const rows=expandPlacement(placement);if(!rows)return null;
+ return rows.map(row=>row.replace(/[PNBRQK]/g,'W').replace(/[pnbrqk]/g,'B')).join('/');
+}
 function legalOccupancyCandidates(placement){
- const target=placementOccupancy(placement);if(!target||!game)return[];const matches=[];
+ const target=placementOccupancy(placement),targetColors=placementColorPattern(placement);
+ if(!target||!targetColors||!game)return[];
+ const matches=[];
  for(const c of game.moves({verbose:true})){
   const g=new Chess(game.fen()),m=g.move({from:c.from,to:c.to,promotion:c.promotion||'q'});if(!m)continue;
   const rows=g.board().map(row=>row.map(p=>p?p.color==='w'?p.type.toUpperCase():p.type:'.').join(''));
-  const occ=rows.map(r=>r.replace(/[pnbrqkPNBRQK]/g,'x')).join('/');if(occ!==target)continue;
-  if(c.promotion){const a=expandPlacement(placement),rr=8-Number(c.to[1]),cc='abcdefgh'.indexOf(c.to[0]),ch=a[rr][cc],expected=c.promotion;const right=ch&&ch!=='.'&&ch.toLowerCase()===expected&&(ch===ch.toUpperCase())===(c.color==='w');if(!right)continue;}
+  const occ=rows.map(r=>r.replace(/[pnbrqkPNBRQK]/g,'x')).join('/');
+  const colors=rows.map(r=>r.replace(/[PNBRQK]/g,'W').replace(/[pnbrqk]/g,'B')).join('/');
+  if(occ!==target||colors!==targetColors)continue;
+  // ONNX piece identity is deliberately used only to resolve promotion choice.
+  if(c.promotion){
+   const a=expandPlacement(placement),rr=8-Number(c.to[1]),cc='abcdefgh'.indexOf(c.to[0]),ch=a[rr][cc],expected=c.promotion;
+   const right=ch&&ch!=='.'&&ch.toLowerCase()===expected&&(ch===ch.toUpperCase())===(c.color==='w');
+   if(!right)continue;
+  }
   matches.push({move:c,game:g});
  }
  return matches;
@@ -382,24 +397,76 @@ function commitOnnxMove(move,sourceLabel){
 }
 function closeMoveConflict(){onnxConflictOpen=false;$('moveConflict').classList.remove('open')}
 function revealManualConflictOptions(){ $('conflictManual').style.display='block'; }
+const conflictMoveKey=x=>x.move.from+x.move.to+(x.move.promotion||'');
+function normalizedZenEvidence(list){
+ const max=Math.max(1,...(list||[]).map(x=>Math.max(0,x.score||0)));
+ return new Map((list||[]).map(x=>[conflictMoveKey(x),Math.max(0,Math.min(1,(x.score||0)/max))]));
+}
+function rankConflictCandidates(data){
+ if(!game)return[];
+ const legal=new Map(game.moves({verbose:true}).map(m=>[m.from+m.to+(m.promotion||''),m]));
+ const onnxScans=data.onnxScanResults||[data.onnxCandidates||[]];
+ const zenScans=data.zenScanResults||[data.zenCandidates||[]];
+ const keys=new Set();
+ for(const scan of onnxScans)for(const x of scan)keys.add(conflictMoveKey(x));
+ for(const scan of zenScans)for(const x of scan)keys.add(conflictMoveKey(x));
+ const zenMaps=zenScans.map(normalizedZenEvidence),rows=[];
+ for(const k of keys){
+  const move=legal.get(k);if(!move)continue; // PGN position is the legality authority.
+  const onnxHits=onnxScans.filter(scan=>scan.some(x=>conflictMoveKey(x)===k)).length;
+  const zenValues=zenMaps.map(m=>m.get(k)||0),zenHits=zenValues.filter(v=>v>0).length;
+  const zenAverage=zenValues.reduce((a,b)=>a+b,0)/Math.max(1,zenValues.length);
+  const agreement=onnxHits>0&&zenHits>0?1:0;
+  const repeatStability=(onnxHits+zenHits)/Math.max(1,onnxScans.length+zenScans.length);
+  // PGN legality is a hard gate; scanner agreement and repeated evidence set the weight.
+  const score=0.75+onnxHits*1.7+zenAverage*2.4+zenHits*.65+agreement*1.8+repeatStability*.8;
+  rows.push({move,score,onnxHits,zenHits,zenAverage,agreement});
+ }
+ rows.sort((a,b)=>b.score-a.score);
+ const total=rows.reduce((a,x)=>a+x.score,0)||1;
+ rows.forEach(x=>x.percent=100*x.score/total);
+ return rows;
+}
+async function collectConflictEvidence(data){
+ const previousPhoto=onnxLastPhoto?new Uint8ClampedArray(onnxLastPhoto):null;
+ const onnxRuns=[],zenRuns=[];
+ for(let i=0;i<2;i++){
+  if(i)await new Promise(resolve=>requestAnimationFrame(()=>resolve()));
+  warp();
+  const currentPhoto=new Uint8ClampedArray(latestFlatPixels);
+  const prediction=await predictOnnxPlacement();
+  onnxRuns.push(legalOccupancyCandidates(prediction.placement));
+  zenRuns.push(zenMoveCandidates(previousPhoto,currentPhoto));
+  if(i===1){data.placement=prediction.placement;data.orientation=prediction.orientation;data.photo=currentPhoto}
+ }
+ data.onnxScanResults=onnxRuns;
+ data.zenScanResults=zenRuns;
+ data.onnxCandidates=onnxRuns[1];
+ data.zenCandidates=zenRuns[1];
+ data.rankedCandidates=rankConflictCandidates(data);
+}
 function autoResolveOnnxZen(){
  if(!onnxConflict||!game)return false;
- const onnx=onnxConflict.onnxCandidates||[],zen=onnxConflict.zenCandidates||[];
- if(!onnx.length){$('moveConflictMessage').textContent='Auto resolution could not proceed: ONNX occupancy does not match a legal move. Select No to choose manually.';revealManualConflictOptions();return false;}
- const key=x=>x.move.from+x.move.to+(x.move.promotion||'');
- const allowed=new Map(onnx.map(x=>[key(x),x]));
- const ranked=zen.filter(x=>allowed.has(key(x))).sort((a,b)=>b.score-a.score);
- const best=ranked[0],runner=ranked[1],gap=best?best.score-(runner?.score||0):0;
- const confident=!!best&&best.score>=13&&(ranked.length===1||gap>=Math.max(5,best.score*.12));
- if(!confident){$('moveConflictMessage').textContent='Auto resolution was not confident enough. ONNX has narrowed the legal moves, but Zen could not clearly identify which piece moved. Select No to choose manually.';revealManualConflictOptions();return false;}
- const chosen=allowed.get(key(best));
- return commitOnnxMove(chosen.move,'automatic ONNX occupancy + Zen PGN analysis');
+ const ranked=onnxConflict.rankedCandidates||rankConflictCandidates(onnxConflict);
+ const best=ranked[0],runner=ranked[1];
+ const gap=best?best.percent-(runner?.percent||0):0;
+ const confident=!!best&&(ranked.length===1||(best.percent>=62&&gap>=15));
+ if(!confident){
+  $('moveConflictMessage').textContent='Auto resolution is not confident enough. Select No to review the legal move options and their evidence percentages.';
+  revealManualConflictOptions();return false;
+ }
+ return commitOnnxMove(best.move,'automatic ONNX + Zen + PGN evidence ('+best.percent.toFixed(1)+'%)');
 }
 function showMoveConflict(data){
- onnxConflict=data;onnxConflictOpen=true;$('moveConflictMessage').textContent=data.reason+' Previous position: '+game.fen()+'. Choose Yes for automatic resolution or No to select a move.';$('conflictChoices').innerHTML='';$('conflictManual').style.display='none';$('autoResolveChoice').value='no';
+ data.rankedCandidates=data.rankedCandidates||rankConflictCandidates(data);
+ onnxConflict=data;onnxConflictOpen=true;
+ $('moveConflictMessage').textContent=data.reason+' Both scanners were repeated twice. Percentages combine ONNX occupancy/colour evidence, Zen visual move evidence, repeat consistency and PGN legality. Choose Yes for automatic resolution or No to select manually.';
+ $('conflictChoices').innerHTML='';$('conflictManual').style.display='none';$('autoResolveChoice').value='no';
  const add=(label,move,source)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=()=>commitOnnxMove(move,source);$('conflictChoices').appendChild(b)};
- data.onnxCandidates.slice(0,4).forEach(x=>add('Use ONNX occupancy move: '+x.move.san+(x.move.promotion?' · ONNX promotion '+PN[x.move.promotion]:''),x.move,'ONNX'));
- data.zenCandidates.slice(0,3).forEach(x=>{if(x.move.promotion)return;add('Use Zen scanner suggestion: '+x.move.san,x.move,'Zen scanner')});
+ data.rankedCandidates.forEach(x=>add(x.move.san+' — '+x.percent.toFixed(1)+'%  (ONNX '+x.onnxHits+'/2, Zen '+x.zenHits+'/2)',x.move,'manual scanner selection'));
+ if(!data.rankedCandidates.length){
+  const p=document.createElement('p');p.textContent='No legal candidate is supported by the scanner evidence. Enter the move manually or keep waiting.';$('conflictChoices').appendChild(p);
+ }
  if(data.placement&&data.allowNewSegment){const b=document.createElement('button');b.type='button';b.textContent='Accept ONNX board as a new PGN position segment';b.onclick=()=>acceptOnnxCorrection(data.placement,data.orientation);$('conflictChoices').appendChild(b)}
  $('conflictMove').value='';$('moveConflict').classList.add('open');
 }
@@ -417,19 +484,47 @@ $('confirmConflictMove').onclick=()=>{
  msg('That move is not legal from the previous position. Enter SAN or coordinates such as g1f3 or e7e8n.');
 };
 $('cancelConflictMove').onclick=()=>{const photo=latestFlatPixels?new Uint8ClampedArray(latestFlatPixels):null;closeMoveConflict();onnxConflict=null;onnxPendingPhoto=false;onnxLastInferencePhoto=photo;msg('Move not recorded. The previous confirmed position is retained. Correct the physical board or press Resync to check again.')};
-function onnxAcceptPosition(placement,orientation){
+async function onnxAcceptPosition(placement,orientation){
  onnxLastOrientation=orientation;
  if(!game){
-  if(placement!==STD_START){onnxInitialPending=placement;drawOnnxPlacement(placement);const issues=initialPositionProblems(placement);const text='Starting position is incorrect. '+issues.slice(0,4).join(' ');msg(text+' Correct the pieces; the camera will check the changed board again.');spk('Starting position incorrect. '+issues.slice(0,4).join(' '));$('initialCustomStart').style.display='block';st(3,'incorrect setup','bad');return;}
-  startOnnxGame(placement,orientation,false);return;
+  $('initialCustomStart').style.display='none';
+  drawOnnxPlacement(placement);
+  if(placement===STD_START){
+   startOnnxGame(placement,orientation,false);
+   msg('Initial position detected.');
+   spk('Initial position detected.');
+  }else{
+   startOnnxGame(placement,orientation,true);
+   msg('Non-initial position detected. ONNX identified the pieces and their colours. Side to move defaults to White; castling and en-passant rights cannot be recovered from a single image.');
+   spk('Non-initial position detected.');
+  }
+  return;
  }
- const oldOcc=placementOccupancy(onnxLastFen.split(' ')[0]),newOcc=placementOccupancy(placement);if(oldOcc===newOcc){onnxLastPhoto=latestFlatPixels?new Uint8ClampedArray(latestFlatPixels):onnxLastPhoto;drawPos(null);return;}
- const onnxCandidates=legalOccupancyCandidates(placement),zenCandidates=zenMoveCandidates(onnxLastPhoto,latestFlatPixels),zenBest=zenCandidates[0],zenRunner=zenCandidates[1],zenConfident=!!zenBest&&zenBest.score>=13&&zenBest.score-(zenRunner?.score||0)>=Math.max(5,zenBest.score*.12);
- if(onnxCandidates.length===1&&zenConfident&&zenBest.move.from===onnxCandidates[0].move.from&&zenBest.move.to===onnxCandidates[0].move.to){
-  const chosen=onnxCandidates[0].move;commitOnnxMove(chosen,'Zen + ONNX');return;
+ const oldOcc=placementOccupancy(onnxLastFen.split(' ')[0]),newOcc=placementOccupancy(placement);
+ const oldColors=placementColorPattern(onnxLastFen.split(' ')[0]),newColors=placementColorPattern(placement);
+ if(oldOcc===newOcc&&oldColors===newColors){
+  onnxLastPhoto=latestFlatPixels?new Uint8ClampedArray(latestFlatPixels):onnxLastPhoto;
+  drawPos(null);return;
  }
- let reason='';if(!onnxCandidates.length)reason='ONNX occupancy does not match any single legal move from the previous position.';else if(onnxCandidates.length>1)reason='ONNX occupancy allows more than one legal move.';else if(!zenConfident)reason='Zen scanner could not identify one sufficiently clear move from the board image.';else reason='Zen scanner and ONNX suggest different moves.';
- showMoveConflict({placement,orientation,photo:new Uint8ClampedArray(latestFlatPixels),onnxCandidates,zenCandidates,reason,allowNewSegment:true});st(4,'user decision required','bad');spk('Scanner disagreement. Please confirm the move from the previous position.');
+ const onnxCandidates=legalOccupancyCandidates(placement);
+ const zenCandidates=zenMoveCandidates(onnxLastPhoto,latestFlatPixels);
+ const zenBest=zenCandidates[0],zenRunner=zenCandidates[1];
+ const zenConfident=!!zenBest&&zenBest.score>=13&&zenBest.score-(zenRunner?.score||0)>=Math.max(5,zenBest.score*.12);
+ if(onnxCandidates.length===1&&zenConfident&&zenBest.move.from===onnxCandidates[0].move.from&&zenBest.move.to===onnxCandidates[0].move.to&&((zenBest.move.promotion||'')===(onnxCandidates[0].move.promotion||''))){
+  commitOnnxMove(onnxCandidates[0].move,'Zen + ONNX');return;
+ }
+ let reason='';
+ if(!onnxCandidates.length)reason='ONNX occupancy/colour evidence does not match a legal move from the previous PGN position.';
+ else if(onnxCandidates.length>1)reason='ONNX occupancy/colour evidence leaves multiple legal moves.';
+ else if(!zenConfident)reason='Zen scanner could not identify one sufficiently clear move.';
+ else reason='Zen scanner and ONNX suggest different moves.';
+ const data={placement,orientation,photo:new Uint8ClampedArray(latestFlatPixels),onnxCandidates,zenCandidates,reason,allowNewSegment:true};
+ st(4,'rechecking ONNX + Zen twice…','bad');
+ $('moveConflictMessage').textContent='Scanner disagreement detected. Rechecking both scanners twice…';
+ $('moveConflict').classList.add('open');
+ await collectConflictEvidence(data);
+ showMoveConflict(data);
+ spk('Scanner disagreement. Reviewing possible moves.');
 }
 async function onnxStep(){
  if(onnxBusy||!onnxSession||onnxConflictOpen)return;
@@ -442,7 +537,7 @@ async function onnxStep(){
   onnxObservedPhoto=photo;
   if(!onnxPendingPhoto||now-onnxPendingSince<450)return;
   if(onnxLastInferencePhoto){const since=photographDifference(onnxLastInferencePhoto,photo);if(since.every(v=>v<2.2)){onnxPendingPhoto=false;return;}}
-  onnxBusy=true;onnxPendingPhoto=false;st(2,'one ONNX inference…');const result=await predictOnnxPlacement();if(!result.placement)throw new Error('Model returned an invalid board placement.');onnxLastOrientation=result.orientation;onnxLastInferencePhoto=photo;drawOnnxPlacement(result.placement);onnxAcceptPosition(result.placement,result.orientation);
+  onnxBusy=true;onnxPendingPhoto=false;st(2,'one ONNX inference…');const result=await predictOnnxPlacement();if(!result.placement)throw new Error('Model returned an invalid board placement.');onnxLastOrientation=result.orientation;onnxLastInferencePhoto=photo;drawOnnxPlacement(result.placement);await onnxAcceptPosition(result.placement,result.orientation);
  }catch(e){console.error(e);msg('ONNX inference error: '+e.message)}finally{onnxBusy=false;}
 }
 
@@ -1566,6 +1661,24 @@ $('stopBroadcastBtn').onclick=stopLive;
 $('whiteName').addEventListener('input',publishLive);
 $('blackName').addEventListener('input',publishLive);
 
+async function autoStartScanner(){
+ try{
+  if(!onnxSession){
+   const url=$('onnxUrl').value.trim();
+   $('onnxStatus').textContent='Loading ONNX model automatically…';
+   const response=await fetch(url);
+   if(!response.ok)throw new Error('Model download failed: HTTP '+response.status);
+   await loadOnnxModel(await response.arrayBuffer(),url.split('/').pop());
+   if(!onnxSession)throw new Error('ONNX model could not be initialized.');
+  }
+  if(!stream)await cam();
+  if(stream)msg('Camera is on. Automatically searching for and verifying the chessboard…');
+ }catch(e){
+  console.warn('Automatic scanner startup:',e);
+  msg('Automatic startup needs permission or setup: '+e.message+' Use Load from internet / Start camera if needed.');
+ }
+}
+window.addEventListener('load',()=>setTimeout(autoStartScanner,250));
 const loop=()=>{const t=Date.now();if(stream&&V.videoWidth&&W.width){wc.drawImage(V,0,0,W.width,W.height);try{({search:searchStep,scan:scanStep,pieces:pieceStep,rec:recStep,onnx:onnxStep}[mode]||(()=>{}))()}catch(e){console.error(e)}}
 setTimeout(loop,Math.max(20,(mode=='rec'?65:250)-(Date.now()-t)))};loop();
 requestAnimationFrame(draw);
