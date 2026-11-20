@@ -336,7 +336,7 @@ function onnxReset(){
 function updateMoveImageControls(){
  const count=onnxMoveImages.length,refs=onnxPieceReferences.length,button=$('downloadMoveImages');
  button.style.display=(count||refs)?'inline-block':'none';
- $('moveImageStatus').textContent=(count?count+' move images saved. ':'')+(refs?refs+' starting-piece reference images captured. ':'')+($('saveMoveImages').value==='yes'?'Move image saving is on.':'Move image saving is off.');
+ $('moveImageStatus').textContent=(count?count+' board photos saved. ':'')+(refs?refs+' HD original-camera piece references captured. ':'')+($('recordVideo').value==='silent'?'Silent photo capture is on.':$('saveMoveImages').value==='yes'?'Move image saving is on.':'Move image saving is off.');
 }
 function timestampFileStamp(date=new Date()){
  const p=n=>String(n).padStart(2,'0');
