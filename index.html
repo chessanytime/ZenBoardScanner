@@ -53,7 +53,8 @@ small{color:var(--mut)}
 <div class="row" id="borderControls" style="justify-content:center;margin:6px 0"><button type="button" id="adjustBorder">Adjust board border</button><button type="button" id="b3">Lock border now</button></div>
 <div class="row" id="verifyInitialControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="verifyInitialPieces"><strong>Piece detection</strong></label><select id="verifyInitialPieces" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="no" selected>No</option><option value="yes">Yes</option></select></div>
 <div class="row" id="saveMoveImagesControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="saveMoveImages"><strong>Save ONNX image per move</strong></label><select id="saveMoveImages" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="no" selected>No</option><option value="yes">Yes</option></select></div>
-<div class="row" style="justify-content:center;margin:6px 0"><button type="button" id="downloadMoveImages" style="display:none">Download move images (.zip)</button><small id="moveImageStatus">Move image saving is off.</small></div>
+<div class="row" style="justify-content:center;margin:6px 0"><button type="button" id="downloadMoveImages" style="display:none">Download game images + references (.zip)</button><small id="moveImageStatus">Move image saving is off.</small></div>
+<div class="row" id="recordVideoControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="recordVideo"><strong>Record ONNX board video</strong></label><select id="recordVideo" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="no" selected>No</option><option value="yes">Yes</option></select><button type="button" id="downloadGameVideo" style="display:none">Download game video</button><small id="videoStatus">Video recording is off.</small></div>
 <div class="row" id="autoResolveControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="autoResolveChoice"><strong>Auto resolver</strong></label><select id="autoResolveChoice" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="yes" selected>Yes</option><option value="no">No</option></select></div>
 <div id="msg">Loading the scanner and requesting camera access. Keep the full chessboard and all 4 corners in view.</div>
 <div id="barw"><div id="bar"></div></div>
@@ -249,7 +250,7 @@ for(let q=0;q<64;q++){for(let k=0;k<48;k++)A[q*K+k]=Math.min(255,F[q*K+k]*g);A[q
 
 /* ---------- ONNX position recognition ---------- */
 let onnxSession=null, onnxBusy=false,onnxProvider='wasm';
-let onnxMoveImages=[];
+let onnxMoveImages=[],onnxPieceReferences=[],onnxVideoRecorder=null,onnxVideoChunks=[],onnxVideoBlob=null,onnxVideoCanvas=null,onnxVideoCtx=null,onnxVideoStream=null,onnxVideoStartedAt=null;
 let onnxLastOrientation='white', onnxLastFen='', onnxSegments=[], onnxCurrentSegment=null;
 let onnxLastPhoto=null,onnxObservedPhoto=null,onnxPendingPhoto=false,onnxPendingSince=0,onnxLastInferencePhoto=null,onnxInitialPending=null,onnxConflict=null,onnxConflictOpen=false;
 const ONNX_SIZE=644, ONNX_PIECES='.PNBRQKpnbrqk';
@@ -326,41 +327,96 @@ function onnxFen(placement,turn='w'){
  return placement+' '+turn+' '+castling+' - 0 1';
 }
 function onnxReset(){
- onnxMoveImages=[];updateMoveImageControls();
+ if(onnxVideoRecorder&&onnxVideoRecorder.state!=='inactive')stopOnnxVideoRecording();
+ onnxMoveImages=[];onnxPieceReferences=[];updateMoveImageControls();
  closeMoveConflict();onnxLastPhoto=null;onnxObservedPhoto=null;onnxPendingPhoto=false;onnxPendingSince=0;onnxLastInferencePhoto=null;onnxInitialPending=null;onnxConflict=null;
  onnxLastFen='';onnxSegments=[];onnxCurrentSegment=null;game=null;physicalMoveLog=[];hasIllegalMoves=false;showMoves();$('initialCustomStart').style.display='none';drawPos(null);
 }
 function updateMoveImageControls(){
-  const count=onnxMoveImages.length,button=$('downloadMoveImages'),status=$('moveImageStatus');
-  button.style.display=count?'inline-block':'none';
-  status.textContent=count?count+' move image'+(count===1?'':'s')+' saved in this game.':($('saveMoveImages').value==='yes'?'Image saving is on. Images will be captured after confirmed moves.':'Move image saving is off.');
+ const count=onnxMoveImages.length,refs=onnxPieceReferences.length,button=$('downloadMoveImages');
+ button.style.display=(count||refs)?'inline-block':'none';
+ $('moveImageStatus').textContent=(count?count+' move images saved. ':'')+(refs?refs+' starting-piece reference images captured. ':'')+($('saveMoveImages').value==='yes'?'Move image saving is on.':'Move image saving is off.');
+}
+function timestampFileStamp(date=new Date()){
+ const p=n=>String(n).padStart(2,'0');
+ return date.getFullYear()+p(date.getMonth()+1)+p(date.getDate())+'_'+p(date.getHours())+p(date.getMinutes())+p(date.getSeconds());
+}
+function timestampIso(date=new Date()){return date.toISOString()}
+function captureOnnxPieceReferences(placement,orientation){
+ if(onnxPieceReferences.length||!placement||!onnxCanvas.width)return;
+ const rows=expandPlacement(placement);if(!rows)return;const stamp=timestampFileStamp();
+ for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+  const piece=rows[r][c];if(piece==='.')continue;
+  const file=orientation==='black'?7-c:c,rank=orientation==='black'?r+1:8-r;
+  if(!(rank===1||rank===8||((rank===2||rank===7)&&file<2)))continue;
+  const row=orientation==='black'?rank-1:8-rank,col=orientation==='black'?7-file:file,tile=onnxCanvas.width/8;
+  const canvas=document.createElement('canvas');canvas.width=canvas.height=160;
+  canvas.getContext('2d').drawImage(onnxCanvas,col*tile,row*tile,tile,tile,0,0,160,160);
+  const color=piece===piece.toUpperCase()?'white':'black',type=piece.toLowerCase(),square='abcdefgh'[file]+rank;
+  const name='reference_'+color+'_'+type+'_'+square+'_'+stamp+'.jpg';
+  onnxPieceReferences.push({name,data:canvas.toDataURL('image/jpeg',.88).split(',')[1],piece,color,type,square,capturedAt:timestampIso()});
+ }
+ updateMoveImageControls();
 }
 function captureOnnxMoveImage(move,fen){
-  if($('saveMoveImages').value!=='yes'||!latestFlatPixels)return;
-  // Save the exact 644x644 board crop that was passed into the latest ONNX inference.
-  const safeSan=String(move.san).replace(/[^a-z0-9]+/gi,'_').replace(/^_|_$/g,'');
-  onnxMoveImages.push({name:'move_'+String(onnxMoveImages.length+1).padStart(3,'0')+'_'+safeSan+'.jpg',data:onnxCanvas.toDataURL('image/jpeg',.9).split(',')[1],san:move.san,fen});
-  updateMoveImageControls();
+ if($('saveMoveImages').value!=='yes'||!latestFlatPixels)return null;
+ const when=new Date(),stamp=timestampFileStamp(when),safeSan=String(move.san).replace(/[^a-z0-9]+/gi,'_').replace(/^_|_$/g,'');
+ const name='move_'+String(onnxMoveImages.length+1).padStart(3,'0')+'_'+stamp+'_'+safeSan+'.jpg';
+ const item={name,data:onnxCanvas.toDataURL('image/jpeg',.9).split(',')[1],san:move.san,fen,timestamp:timestampIso(when)};
+ onnxMoveImages.push(item);updateMoveImageControls();return item;
 }
+function updateVideoControls(){
+ const active=!!(onnxVideoRecorder&&onnxVideoRecorder.state==='recording');
+ $('downloadGameVideo').style.display=(onnxVideoBlob||onnxVideoChunks.length)?'inline-block':'none';
+ $('videoStatus').textContent=active?'Recording low-resolution ONNX board video…':onnxVideoBlob?'Video ready to download.':$('recordVideo').value==='yes'?'Video will start when the board position is initialized.':'Video recording is off.';
+}
+function updateOnnxVideoFrame(){
+ if(!onnxVideoCtx||!latestFlatPixels)return;
+ const image=onnxRawCtx.createImageData(SW,SW);image.data.set(latestFlatPixels);onnxRawCtx.putImageData(image,0,0);
+ onnxVideoCtx.drawImage(onnxRaw,M,M,S,S,0,0,320,320);
+}
+function startOnnxVideoRecording(){
+ if($('recordVideo').value!=='yes'||(onnxVideoRecorder&&onnxVideoRecorder.state==='recording'))return;
+ if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream){msg('This browser does not support board video recording.');return}
+ onnxVideoCanvas=document.createElement('canvas');onnxVideoCanvas.width=onnxVideoCanvas.height=320;onnxVideoCtx=onnxVideoCanvas.getContext('2d');
+ updateOnnxVideoFrame();onnxVideoStream=onnxVideoCanvas.captureStream(5);
+ const mime=['video/webm;codecs=vp8','video/webm'].find(x=>MediaRecorder.isTypeSupported(x));
+ try{
+  onnxVideoChunks=[];onnxVideoBlob=null;onnxVideoStartedAt=new Date();
+  onnxVideoRecorder=new MediaRecorder(onnxVideoStream,{...(mime?{mimeType:mime}:{}),videoBitsPerSecond:180000});
+  onnxVideoRecorder.ondataavailable=e=>{if(e.data&&e.data.size)onnxVideoChunks.push(e.data)};
+  onnxVideoRecorder.onstop=()=>{onnxVideoBlob=new Blob(onnxVideoChunks,{type:onnxVideoRecorder.mimeType||'video/webm'});onnxVideoStream?.getTracks().forEach(t=>t.stop());updateVideoControls()};
+  onnxVideoRecorder.start(1000);updateVideoControls();
+ }catch(e){console.error(e);msg('Could not start video recording: '+e.message);onnxVideoStream?.getTracks().forEach(t=>t.stop())}
+}
+function stopOnnxVideoRecording(){if(onnxVideoRecorder&&onnxVideoRecorder.state!=='inactive')onnxVideoRecorder.stop();else updateVideoControls()}
+function downloadOnnxGameVideo(){
+ if(!onnxVideoBlob){msg('The game video is not ready yet. Stop recording first.');return}
+ const url=URL.createObjectURL(onnxVideoBlob),a=document.createElement('a');a.href=url;a.download='onnx_board_video_'+timestampFileStamp(onnxVideoStartedAt||new Date())+'.webm';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);
+}
+$('downloadGameVideo').onclick=downloadOnnxGameVideo;
+$('recordVideo').onchange=()=>{if($('recordVideo').value==='no')stopOnnxVideoRecording();updateVideoControls()};
 async function downloadOnnxMoveImages(){
-  if(!onnxMoveImages.length){msg('No move images have been saved.');return}
-  if(!window.JSZip){msg('ZIP library is unavailable. Check your internet connection and try again.');return}
-  const zip=new JSZip(),folder=zip.folder('onnx_move_images');
-  onnxMoveImages.forEach(item=>folder.file(item.name,item.data,{base64:true}));
-  folder.file('move_index.txt',onnxMoveImages.map((item,i)=>(i+1)+'. '+item.san+' | '+item.fen+' | '+item.name).join('\n'));
-  try{const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='onnx_move_images.zip';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);msg('Downloaded '+onnxMoveImages.length+' ONNX move images in onnx_move_images.zip.')}
-  catch(e){console.error(e);msg('Could not create the image ZIP: '+e.message)}
+ if(!onnxMoveImages.length&&!onnxPieceReferences.length){msg('No ONNX images or reference pictures have been saved.');return}
+ if(!window.JSZip){msg('ZIP library is unavailable. Check your internet connection and try again.');return}
+ const zip=new JSZip(),folder=zip.folder('onnx_move_images'),refs=zip.folder('starting_piece_references');
+ onnxMoveImages.forEach(item=>folder.file(item.name,item.data,{base64:true}));
+ onnxPieceReferences.forEach(item=>refs.file(item.name,item.data,{base64:true}));
+ folder.file('move_index.txt',onnxMoveImages.map((item,i)=>(i+1)+'. '+item.san+' | '+item.timestamp+' | '+item.fen+' | '+item.name).join('\n'));
+ refs.file('reference_index.txt',onnxPieceReferences.map(item=>item.name+' | '+item.color+' '+item.type+' | '+item.square+' | '+item.capturedAt).join('\n'));
+ try{const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='onnx_game_images_'+timestampFileStamp()+'.zip';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);msg('Downloaded '+onnxMoveImages.length+' move images and '+onnxPieceReferences.length+' starting-piece references.')}
+ catch(e){console.error(e);msg('Could not create the image ZIP: '+e.message)}
 }
 $('downloadMoveImages').onclick=downloadOnnxMoveImages;
 $('saveMoveImages').onchange=updateMoveImageControls;
-updateMoveImageControls();
+updateMoveImageControls();updateVideoControls();
 function onnxPgn(){
  const date=new Date(),p=n=>String(n).padStart(2,'0');
  const dateTag=date.getFullYear()+'.'+p(date.getMonth()+1)+'.'+p(date.getDate());
  return onnxSegments.map((seg,i)=>{
   const headers=[['Event','ONNX + Zen Mind Physical Board Scan'],['Site','Chess Move Scanner'],['Date',dateTag],['Round',String(i+1)],['White',$('whiteName').value.trim()||'White'],['Black',$('blackName').value.trim()||'Black'],['Result','*']];
   if(seg.start!==STD_START+' w KQkq - 0 1')headers.push(['SetUp','1'],['FEN',seg.start]);
-  const text=seg.moves.map((m,j)=>(m.color==='w'?(Math.floor(j/2)+1)+'. ':'')+m.san).join(' ');
+  const text=seg.moves.map((m,j)=>(m.color==='w'?(Math.floor(j/2)+1)+'. ':'')+m.san+(m.timestamp||m.image?' {'+(m.timestamp?'[%timestamp '+m.timestamp+']':'')+(m.image?' [%image '+m.image+']':'')+'}':'')).join(' ');
   return headers.map(([k,v])=>'['+k+' "'+String(v).replace(/"/g,'\\"')+'"]').join('\n')+'\n\n'+(text?text+' ':'')+'*';
  }).join('\n\n')+'\n';
 }
@@ -385,7 +441,7 @@ function initialPositionProblems(placement){
 
 function startOnnxGame(placement,orientation,custom){
  const fen=onnxFen(placement,'w');const g=new Chess();if(!g.load(fen)){msg('The detected board cannot be loaded as a chess position. Correct the board and rescan.');return false;}
- game=g;onnxLastFen=game.fen();onnxLastOrientation=orientation;onnxCurrentSegment={start:onnxLastFen,moves:[]};onnxSegments.push(onnxCurrentSegment);onnxInitialPending=null;onnxLastPhoto=latestFlatPixels?new Uint8ClampedArray(latestFlatPixels):null;onnxLastInferencePhoto=onnxLastPhoto?new Uint8ClampedArray(onnxLastPhoto):null;onnxPendingPhoto=false;$('initialCustomStart').style.display='none';
+ game=g;onnxLastFen=game.fen();onnxLastOrientation=orientation;captureOnnxPieceReferences(placement,orientation);startOnnxVideoRecording();onnxCurrentSegment={start:onnxLastFen,moves:[]};onnxSegments.push(onnxCurrentSegment);onnxInitialPending=null;onnxLastPhoto=latestFlatPixels?new Uint8ClampedArray(latestFlatPixels):null;onnxLastInferencePhoto=onnxLastPhoto?new Uint8ClampedArray(onnxLastPhoto):null;onnxPendingPhoto=false;$('initialCustomStart').style.display='none';
  st(2,'position read ✓','ok');st(3,custom?'custom start accepted':'starting FEN verified ✓','ok');st(4,'ready','ok');$('modelStatus').textContent='ONNX model active · orientation: '+orientation+' · Zen move comparison enabled';showMoves();drawPos(null);prog(1);msg(custom?'Non-initial position detected. ONNX piece placement loaded. White to move is the safe default; castling and en-passant rights are unknown from a still image.':'Initial position detected. Zen Mind and ONNX move comparison is active.');spk(custom?'Non-initial position detected.':'Initial position detected.');return true;
 }
 $('initialCustomStart').onclick=()=>{if(onnxInitialPending)startOnnxGame(onnxInitialPending,onnxLastOrientation,true)};
@@ -428,7 +484,7 @@ function zenMoveCandidates(previousPhoto,currentPhoto){
 function commitOnnxMove(move,sourceLabel){
  if(!game||!move)return false;const previousFen=game.fen(),m=game.move({from:move.from,to:move.to,promotion:move.promotion||undefined});if(!m){msg('That move is no longer legal from the previous position.');return false;}
  onnxLastFen=game.fen();onnxLastOrientation=onnxConflict?.orientation||onnxLastOrientation;
- captureOnnxMoveImage(m,onnxLastFen);if(!onnxCurrentSegment){onnxCurrentSegment={start:previousFen,moves:[]};onnxSegments.push(onnxCurrentSegment)}onnxCurrentSegment.moves.push({san:m.san,color:m.color});physicalMoveLog.push({label:m.san,fen:game.fen(),previousFen,illegal:false});
+ const savedImage=captureOnnxMoveImage(m,onnxLastFen),moveTimestamp=timestampIso();if(!onnxCurrentSegment){onnxCurrentSegment={start:previousFen,moves:[]};onnxSegments.push(onnxCurrentSegment)}onnxCurrentSegment.moves.push({san:m.san,color:m.color,timestamp:moveTimestamp,image:savedImage?.name||''});physicalMoveLog.push({label:m.san,fen:game.fen(),previousFen,illegal:false});
  onnxLastPhoto=onnxConflict?.photo?new Uint8ClampedArray(onnxConflict.photo):(latestFlatPixels?new Uint8ClampedArray(latestFlatPixels):onnxLastPhoto);onnxLastInferencePhoto=onnxLastPhoto?new Uint8ClampedArray(onnxLastPhoto):null;onnxPendingPhoto=false;onnxConflict=null;closeMoveConflict();showMoves();drawPos(null);st(4,'recorded ✓','ok');msg('Recorded '+m.san+(sourceLabel?' · confirmed by '+sourceLabel:''));if(m.promotion)spk('Promotes to '+PN[m.promotion]);else sayMove(m);if(typeof sendCameraMoveOnline==='function')sendCameraMoveOnline(m,previousFen);return true;
 }
 function closeMoveConflict(){onnxConflictOpen=false;$('moveConflict').classList.remove('open')}
@@ -1757,7 +1813,7 @@ async function autoStartScanner(){
  }
 }
 window.addEventListener('load',()=>setTimeout(autoStartScanner,250));
-const loop=()=>{const t=Date.now();if(stream&&V.videoWidth&&W.width){wc.drawImage(V,0,0,W.width,W.height);try{({search:searchStep,scan:scanStep,pieces:pieceStep,rec:recStep,onnx:onnxStep}[mode]||(()=>{}))()}catch(e){console.error(e)}}
+const loop=()=>{const t=Date.now();if(stream&&V.videoWidth&&W.width){wc.drawImage(V,0,0,W.width,W.height);try{({search:searchStep,scan:scanStep,pieces:pieceStep,rec:recStep,onnx:onnxStep}[mode]||(()=>{}))();if(onnxVideoRecorder&&onnxVideoRecorder.state==='recording')updateOnnxVideoFrame()}catch(e){console.error(e)}}
 setTimeout(loop,Math.max(20,(mode=='rec'?65:250)-(Date.now()-t)))};loop();
 requestAnimationFrame(draw);
 </script></body></html>
