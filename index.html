@@ -3,6 +3,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Zen Mind — ONNX Chess Move Scanner</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.webgpu.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
@@ -50,7 +51,9 @@ small{color:var(--mut)}
 <div id="stage"><video id="v" playsinline muted autoplay></video><canvas id="ov"></canvas></div>
 <div class="row" id="zoomControls" style="justify-content:center;margin:8px 0"><button type="button" id="zoomOut" disabled>Zoom −</button><button type="button" id="zoomIn" disabled>Zoom +</button></div>
 <div class="row" id="borderControls" style="justify-content:center;margin:6px 0"><button type="button" id="adjustBorder">Adjust board border</button><button type="button" id="b3">Lock border now</button></div>
-<div class="row" id="verifyInitialControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="verifyInitialPieces"><strong>Verify starting pieces</strong></label><select id="verifyInitialPieces" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="no" selected>No</option><option value="yes">Yes</option></select></div>
+<div class="row" id="verifyInitialControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="verifyInitialPieces"><strong>Piece detection</strong></label><select id="verifyInitialPieces" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="no" selected>No</option><option value="yes">Yes</option></select></div>
+<div class="row" id="saveMoveImagesControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="saveMoveImages"><strong>Save ONNX image per move</strong></label><select id="saveMoveImages" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="no" selected>No</option><option value="yes">Yes</option></select></div>
+<div class="row" style="justify-content:center;margin:6px 0"><button type="button" id="downloadMoveImages" style="display:none">Download move images (.zip)</button><small id="moveImageStatus">Move image saving is off.</small></div>
 <div class="row" id="autoResolveControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="autoResolveChoice"><strong>Auto resolver</strong></label><select id="autoResolveChoice" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="yes" selected>Yes</option><option value="no">No</option></select></div>
 <div id="msg">Loading the scanner and requesting camera access. Keep the full chessboard and all 4 corners in view.</div>
 <div id="barw"><div id="bar"></div></div>
@@ -246,6 +249,7 @@ for(let q=0;q<64;q++){for(let k=0;k<48;k++)A[q*K+k]=Math.min(255,F[q*K+k]*g);A[q
 
 /* ---------- ONNX position recognition ---------- */
 let onnxSession=null, onnxBusy=false,onnxProvider='wasm';
+let onnxMoveImages=[];
 let onnxLastOrientation='white', onnxLastFen='', onnxSegments=[], onnxCurrentSegment=null;
 let onnxLastPhoto=null,onnxObservedPhoto=null,onnxPendingPhoto=false,onnxPendingSince=0,onnxLastInferencePhoto=null,onnxInitialPending=null,onnxConflict=null,onnxConflictOpen=false;
 const ONNX_SIZE=644, ONNX_PIECES='.PNBRQKpnbrqk';
@@ -322,9 +326,36 @@ function onnxFen(placement,turn='w'){
  return placement+' '+turn+' '+castling+' - 0 1';
 }
 function onnxReset(){
+ onnxMoveImages=[];updateMoveImageControls();
  closeMoveConflict();onnxLastPhoto=null;onnxObservedPhoto=null;onnxPendingPhoto=false;onnxPendingSince=0;onnxLastInferencePhoto=null;onnxInitialPending=null;onnxConflict=null;
  onnxLastFen='';onnxSegments=[];onnxCurrentSegment=null;game=null;physicalMoveLog=[];hasIllegalMoves=false;showMoves();$('initialCustomStart').style.display='none';drawPos(null);
 }
+function updateMoveImageControls(){
+  const count=onnxMoveImages.length,button=$('downloadMoveImages'),status=$('moveImageStatus');
+  button.style.display=count?'inline-block':'none';
+  status.textContent=count?count+' move image'+(count===1?'':'s')+' saved in this game.':($('saveMoveImages').value==='yes'?'Image saving is on. Images will be captured after confirmed moves.':'Move image saving is off.');
+}
+function captureOnnxMoveImage(move,fen){
+  if($('saveMoveImages').value!=='yes'||!latestFlatPixels)return;
+  const pixels=onnxConflict?.photo||latestFlatPixels;
+  const canvas=document.createElement('canvas');canvas.width=SW;canvas.height=SW;
+  const ctx=canvas.getContext('2d');const imageData=ctx.createImageData(SW,SW);imageData.data.set(pixels);ctx.putImageData(imageData,0,0);
+  const safeSan=String(move.san).replace(/[^a-z0-9]+/gi,'_').replace(/^_|_$/g,'');
+  onnxMoveImages.push({name:'move_'+String(onnxMoveImages.length+1).padStart(3,'0')+'_'+safeSan+'.jpg',data:canvas.toDataURL('image/jpeg',.88).split(',')[1],san:move.san,fen});
+  updateMoveImageControls();
+}
+async function downloadOnnxMoveImages(){
+  if(!onnxMoveImages.length){msg('No move images have been saved.');return}
+  if(!window.JSZip){msg('ZIP library is unavailable. Check your internet connection and try again.');return}
+  const zip=new JSZip(),folder=zip.folder('onnx_move_images');
+  onnxMoveImages.forEach(item=>folder.file(item.name,item.data,{base64:true}));
+  folder.file('move_index.txt',onnxMoveImages.map((item,i)=>(i+1)+'. '+item.san+' | '+item.fen+' | '+item.name).join('\n'));
+  try{const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='onnx_move_images.zip';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);msg('Downloaded '+onnxMoveImages.length+' ONNX move images in onnx_move_images.zip.')}
+  catch(e){console.error(e);msg('Could not create the image ZIP: '+e.message)}
+}
+$('downloadMoveImages').onclick=downloadOnnxMoveImages;
+$('saveMoveImages').onchange=updateMoveImageControls;
+updateMoveImageControls();
 function onnxPgn(){
  const date=new Date(),p=n=>String(n).padStart(2,'0');
  const dateTag=date.getFullYear()+'.'+p(date.getMonth()+1)+'.'+p(date.getDate());
@@ -398,7 +429,8 @@ function zenMoveCandidates(previousPhoto,currentPhoto){
 }
 function commitOnnxMove(move,sourceLabel){
  if(!game||!move)return false;const previousFen=game.fen(),m=game.move({from:move.from,to:move.to,promotion:move.promotion||undefined});if(!m){msg('That move is no longer legal from the previous position.');return false;}
- onnxLastFen=game.fen();onnxLastOrientation=onnxConflict?.orientation||onnxLastOrientation;if(!onnxCurrentSegment){onnxCurrentSegment={start:previousFen,moves:[]};onnxSegments.push(onnxCurrentSegment)}onnxCurrentSegment.moves.push({san:m.san,color:m.color});physicalMoveLog.push({label:m.san,fen:game.fen(),previousFen,illegal:false});
+ onnxLastFen=game.fen();onnxLastOrientation=onnxConflict?.orientation||onnxLastOrientation;
+ captureOnnxMoveImage(m,onnxLastFen);if(!onnxCurrentSegment){onnxCurrentSegment={start:previousFen,moves:[]};onnxSegments.push(onnxCurrentSegment)}onnxCurrentSegment.moves.push({san:m.san,color:m.color});physicalMoveLog.push({label:m.san,fen:game.fen(),previousFen,illegal:false});
  onnxLastPhoto=onnxConflict?.photo?new Uint8ClampedArray(onnxConflict.photo):(latestFlatPixels?new Uint8ClampedArray(latestFlatPixels):onnxLastPhoto);onnxLastInferencePhoto=onnxLastPhoto?new Uint8ClampedArray(onnxLastPhoto):null;onnxPendingPhoto=false;onnxConflict=null;closeMoveConflict();showMoves();drawPos(null);st(4,'recorded ✓','ok');msg('Recorded '+m.san+(sourceLabel?' · confirmed by '+sourceLabel:''));if(m.promotion)spk('Promotes to '+PN[m.promotion]);else sayMove(m);if(typeof sendCameraMoveOnline==='function')sendCameraMoveOnline(m,previousFen);return true;
 }
 function closeMoveConflict(){onnxConflictOpen=false;$('moveConflict').classList.remove('open')}
@@ -1501,6 +1533,7 @@ function deleteRecordedLast(){
  cancelPromotion();
  if(!physicalMoveLog.length){msg('No recorded move to delete.');return}
  const last=physicalMoveLog.pop();
+ if(mode==='onnx'&&onnxMoveImages.length){onnxMoveImages.pop();updateMoveImageControls();}
  if(!game.load(last.previousFen)){physicalMoveLog.push(last);msg('Could not restore the previous board position.');return}
  if(mode==='onnx'){if(onnxCurrentSegment&&onnxCurrentSegment.moves.length)onnxCurrentSegment.moves.pop();onnxLastFen=game.fen();onnxLastPhoto=latestFlatPixels?new Uint8ClampedArray(latestFlatPixels):onnxLastPhoto;onnxLastInferencePhoto=onnxLastPhoto?new Uint8ClampedArray(onnxLastPhoto):null;}
  syncEditedPosition();msg('Deleted last move: '+last.label+'. Match the physical board before continuing.');
