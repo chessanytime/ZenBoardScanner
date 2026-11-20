@@ -347,7 +347,8 @@ function cameraBoardCaptureSource(){
  if(!V.videoWidth||!V.videoHeight||!quad||!sc)return null;
  const source=document.createElement('canvas');source.width=V.videoWidth;source.height=V.videoHeight;
  const ctx=source.getContext('2d',{willReadFrequently:true});ctx.drawImage(V,0,0,source.width,source.height);
- const corners=rq().map(p=>[p[0]/sc,p[1]/sc]);
+ // quad/rq are already in native video pixels. sc is only for the downscaled processing canvas.
+ const corners=rq().map(p=>[p[0],p[1]]);
  const boardToCamera=hom([[0,0],[8,0],[8,8],[0,8]],corners);
  if(boardToCamera.some(v=>!Number.isFinite(v)))return null;
  return {data:ctx.getImageData(0,0,source.width,source.height).data,width:source.width,height:source.height,boardToCamera};
@@ -372,10 +373,13 @@ function captureOnnxPieceReferences(placement,orientation){
   const piece=rows[r][c];if(piece==='.')continue;
   const file=orientation==='black'?7-c:c,rank=orientation==='black'?r+1:8-r;
   if(!(rank===1||rank===8||((rank===2||rank===7)&&file<2)))continue;
-  const row=orientation==='black'?rank-1:8-rank,col=orientation==='black'?7-file:file;
+  // FEN placement rows already run from rank 8 to rank 1, left to right.
+  // Keep the crop inside this occupied square so it shows the actual piece.
+  const row=r,col=c,margin=.09,span=.82;
   const color=piece===piece.toUpperCase()?'white':'black',type=piece.toLowerCase(),square='abcdefgh'[file]+rank;
   const name='reference_'+color+'_'+type+'_'+square+'_'+stamp+'.png';
-  const data=cameraBoardPng(source,col,row,512);if(data)onnxPieceReferences.push({name,data,piece,color,type,square,capturedAt:timestampIso(),source:'original camera'});
+  const data=cameraBoardPng(source,col+margin,row+margin,512,span);
+  if(data)onnxPieceReferences.push({name,data,piece,color,type,square,capturedAt:timestampIso(),source:'original camera square '+square});
  }
  updateMoveImageControls();
 }
