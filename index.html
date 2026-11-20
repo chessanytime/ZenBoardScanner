@@ -332,9 +332,7 @@ function onnxReset(){
  onnxLastFen='';onnxSegments=[];onnxCurrentSegment=null;game=null;physicalMoveLog=[];hasIllegalMoves=false;showMoves();$('initialCustomStart').style.display='none';drawPos(null);
 }
 function updateMoveImageControls(){
- const count=onnxMoveImages.length,refs=onnxPieceReferences.length,button=$('downloadMoveImages');
- button.style.display=(count||refs)?'inline-block':'none';
- $('moveImageStatus').textContent=(count?count+' board photos saved. ':'')+(refs?refs+' HD original-camera piece references captured. ':'')+($('recordVideo').value==='silent'?'Silent photo capture is on.':$('saveMoveImages').value==='yes'?'Move image saving is on.':'Move image saving is off.');
+ const count=onnxMoveImages.length,button=$('downloadMoveImages');button.style.display=count?'inline-block':'none';$('moveImageStatus').textContent=count?count+' pictures saved.':'No pictures captured yet.';
 }
 function timestampFileStamp(date=new Date()){
  const p=n=>String(n).padStart(2,'0');
@@ -401,13 +399,7 @@ function captureOnnxMoveImage(move,fen){
  const item={name,data:onnxCanvas.toDataURL('image/jpeg',.96).split(',')[1],san:move.san,fen,timestamp:timestampIso(when)};
  onnxMoveImages.push(item);updateMoveImageControls();return item;
 }
-function updateVideoControls(){
- const active=!!(onnxVideoRecorder&&onnxVideoRecorder.state==='recording');
- $('downloadGameVideo').style.display=onnxVideoBlob?'inline-block':'none';
- $('stopGameVideo').style.display=active?'inline-block':'none';
- $('videoStatus').textContent=active?($('recordVideo').value==='silent'?'Silent photos + optional board video…':'Recording board video + move detection…'):onnxVideoBlob?'Video ready to download.':$('recordVideo').value==='silent'?'Silent photo capture active; video is optional.':$('recordVideo').value==='yes'?'Video will start when the board position is initialized.':'Video recording is off.';
- $('toggleGameVideo').textContent=active?'Recording…':'Start video recording';
-}
+function updateVideoControls(){return;}
 function updateOnnxVideoFrame(){
  if(!onnxVideoCtx||!latestFlatPixels)return;
  const image=onnxRawCtx.createImageData(SW,SW);image.data.set(latestFlatPixels);onnxRawCtx.putImageData(image,0,0);
@@ -435,7 +427,7 @@ function downloadOnnxGameVideo(){
 $('downloadGameVideo').onclick=downloadOnnxGameVideo;
 $('stopGameVideo').onclick=stopOnnxVideoRecording;
 $('toggleGameVideo').onclick=()=>{if(onnxVideoRecorder&&onnxVideoRecorder.state==='recording'){stopOnnxVideoRecording();$('toggleGameVideo').textContent='Start video recording'}else{if($('recordVideo').value==='no')$('recordVideo').value='yes';startOnnxVideoRecording();$('toggleGameVideo').textContent='Recording…'}};
-$('recordVideo').onchange=()=>{const choice=$('recordVideo').value;if(choice==='no'){stopOnnxVideoRecording();$('toggleGameVideo').textContent='Start video recording'}else if(choice==='yes'&&game){startOnnxVideoRecording();$('toggleGameVideo').textContent='Recording…'}if(choice==='silent'){onnxSilentObservedPhoto=null;onnxSilentPendingPhoto=false;onnxSilentLastSavedPhoto=null;msg('Silent mode: photos are saved with a beep after each settled board change. Video is optional; use Start video recording if wanted.')}else if(choice==='yes')msg('Video recording with ONNX move detection selected.');updateVideoControls();};
+$('recordVideo').onchange=()=>{};
 async function downloadOnnxMoveImages(){
  if(!onnxMoveImages.length&&!onnxPieceReferences.length){msg('No ONNX images or reference pictures have been saved.');return}
  if(!window.JSZip){msg('ZIP library is unavailable. Check your internet connection and try again.');return}
@@ -492,7 +484,7 @@ function initialPositionProblems(placement){
 
 function startOnnxGame(placement,orientation,custom){
  const fen=onnxFen(placement,'w');const g=new Chess();if(!g.load(fen)){msg('The detected board cannot be loaded as a chess position. Correct the board and rescan.');return false;}
- game=g;onnxLastFen=game.fen();onnxLastOrientation=orientation;captureOnnxPieceReferences(placement,orientation);if($('recordVideo').value==='yes')startOnnxVideoRecording();onnxSilentObservedPhoto=null;onnxSilentPendingPhoto=false;onnxSilentLastSavedPhoto=null;onnxCurrentSegment={start:onnxLastFen,moves:[]};onnxSegments.push(onnxCurrentSegment);onnxInitialPending=null;onnxLastPhoto=latestFlatPixels?new Uint8ClampedArray(latestFlatPixels):null;onnxLastInferencePhoto=onnxLastPhoto?new Uint8ClampedArray(onnxLastPhoto):null;onnxPendingPhoto=false;$('initialCustomStart').style.display='none';
+ game=g;onnxLastFen=game.fen();onnxLastOrientation=orientation;captureOnnxPieceReferences(placement,orientation);if($('recordVideo').value==='yes')startOnnxVideoRecording();onnxCurrentSegment={start:onnxLastFen,moves:[]};onnxSegments.push(onnxCurrentSegment);onnxInitialPending=null;onnxLastPhoto=latestFlatPixels?new Uint8ClampedArray(latestFlatPixels):null;onnxLastInferencePhoto=onnxLastPhoto?new Uint8ClampedArray(onnxLastPhoto):null;onnxPendingPhoto=false;$('initialCustomStart').style.display='none';
  st(2,'position read ✓','ok');st(3,custom?'custom start accepted':'starting FEN verified ✓','ok');st(4,'ready','ok');$('modelStatus').textContent='ONNX model active · orientation: '+orientation+' · Zen move comparison enabled';showMoves();drawPos(null);prog(1);msg(custom?'Non-initial position detected. ONNX piece placement loaded. White to move is the safe default; castling and en-passant rights are unknown from a still image.':'Initial position detected. Zen Mind and ONNX move comparison is active.');spk(custom?'Non-initial position detected.':'Initial position detected.');return true;
 }
 $('initialCustomStart').onclick=()=>{if(onnxInitialPending)startOnnxGame(onnxInitialPending,onnxLastOrientation,true)};
@@ -1072,7 +1064,7 @@ function bidirectionalRecoveryCandidates(currentFeatures,currentPixels){
 }
 /* Nonstandard moves: retain a physical-board FEN even if chess.js rejects
    the move. The nonstandard move is marked in the move log and PGN export.
-   Do not silently convert an illegal move into a legal one. */
+   Do not automatically convert an illegal move into a legal one. */
 let physicalMoveLog=[],hasIllegalMoves=false;
 function physicalMoveCandidates(F,pixels){
  if(!lastGoodSnapshot||!base||lastGoodSnapshot.fen!==game.fen())return [];
@@ -1536,7 +1528,7 @@ function recStep(){
  finishMove(x,averaged,snapshot);
 }
 /* Recovery is opt-in, because two-ply inference from visual occupancy alone
-   can be ambiguous. It never silently writes a guessed two-move sequence. */
+   can be ambiguous. It never automatically writes a guessed two-move sequence. */
 function recovery(){
  if(mode!=='rec'||!acceptedFeatures){msg('Start recording before using recovery.');return}
  const raw=warp(),obs=occupancyEvidence(raw),oldObs=occupancyEvidence(acceptedFeatures);
