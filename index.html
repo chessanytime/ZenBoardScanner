@@ -54,7 +54,7 @@ small{color:var(--mut)}
 <div class="row" id="verifyInitialControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="verifyInitialPieces"><strong>Piece detection</strong></label><select id="verifyInitialPieces" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="no" selected>No</option><option value="yes">Yes</option></select></div>
 <div class="row" id="saveMoveImagesControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="saveMoveImages"><strong>Save ONNX image per move</strong></label><select id="saveMoveImages" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="no" selected>No</option><option value="yes">Yes</option></select></div>
 <div class="row" style="justify-content:center;margin:6px 0"><button type="button" id="downloadMoveImages" style="display:none">Download game images + references (.zip)</button><small id="moveImageStatus">Move image saving is off.</small></div>
-<div class="row" id="recordVideoControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="recordVideo"><strong>Record ONNX board video</strong></label><select id="recordVideo" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="no" selected>No</option><option value="yes">Yes</option></select><button type="button" id="stopGameVideo" style="display:none">Stop recording</button><button type="button" id="downloadGameVideo" style="display:none">Download game video</button><small id="videoStatus">Video recording is off.</small></div>
+<div class="row" id="recordVideoControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="recordVideo"><strong>Record ONNX board video</strong></label><select id="recordVideo" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="no" selected>No</option><option value="yes">Yes</option></select><button type="button" id="toggleGameVideo">Start video recording</button><button type="button" id="stopGameVideo" style="display:none">Stop recording</button><button type="button" id="downloadGameVideo" style="display:none">Download game video</button><small id="videoStatus">Video recording is off.</small></div>
 <div class="row" id="autoResolveControls" style="justify-content:center;align-items:center;gap:8px;margin:6px 0"><label for="autoResolveChoice"><strong>Auto resolver</strong></label><select id="autoResolveChoice" style="padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid #8fa0ad66"><option value="yes" selected>Yes</option><option value="no">No</option></select></div>
 <div id="msg">Loading the scanner and requesting camera access. Keep the full chessboard and all 4 corners in view.</div>
 <div id="barw"><div id="bar"></div></div>
@@ -250,7 +250,7 @@ for(let q=0;q<64;q++){for(let k=0;k<48;k++)A[q*K+k]=Math.min(255,F[q*K+k]*g);A[q
 
 /* ---------- ONNX position recognition ---------- */
 let onnxSession=null, onnxBusy=false,onnxProvider='wasm';
-let onnxMoveImages=[],onnxPieceReferences=[],onnxVideoRecorder=null,onnxVideoChunks=[],onnxVideoBlob=null,onnxVideoCanvas=null,onnxVideoCtx=null,onnxVideoStream=null,onnxVideoStartedAt=null;
+let onnxMoveImages=[],onnxPieceReferences=[],onnxVideoRecorder=null,onnxVideoChunks=[],onnxVideoBlob=null,onnxVideoCanvas=null,onnxVideoCtx=null,onnxVideoStream=null,onnxVideoStartedAt=null,onnxLastSavedBoardPhoto=null;
 let onnxLastOrientation='white', onnxLastFen='', onnxSegments=[], onnxCurrentSegment=null;
 let onnxLastPhoto=null,onnxObservedPhoto=null,onnxPendingPhoto=false,onnxPendingSince=0,onnxLastInferencePhoto=null,onnxInitialPending=null,onnxConflict=null,onnxConflictOpen=false;
 const ONNX_SIZE=644, ONNX_PIECES='.PNBRQKpnbrqk';
@@ -328,7 +328,7 @@ function onnxFen(placement,turn='w'){
 }
 function onnxReset(){
  if(onnxVideoRecorder&&onnxVideoRecorder.state!=='inactive')stopOnnxVideoRecording();
- onnxMoveImages=[];onnxPieceReferences=[];updateMoveImageControls();
+ onnxMoveImages=[];onnxPieceReferences=[];onnxLastSavedBoardPhoto=null;updateMoveImageControls();
  closeMoveConflict();onnxLastPhoto=null;onnxObservedPhoto=null;onnxPendingPhoto=false;onnxPendingSince=0;onnxLastInferencePhoto=null;onnxInitialPending=null;onnxConflict=null;
  onnxLastFen='';onnxSegments=[];onnxCurrentSegment=null;game=null;physicalMoveLog=[];hasIllegalMoves=false;showMoves();$('initialCustomStart').style.display='none';drawPos(null);
 }
@@ -339,7 +339,7 @@ function updateMoveImageControls(){
 }
 function timestampFileStamp(date=new Date()){
  const p=n=>String(n).padStart(2,'0');
- return date.getFullYear()+p(date.getMonth()+1)+p(date.getDate())+'_'+p(date.getHours())+p(date.getMinutes())+p(date.getSeconds());
+ return p(date.getHours())+p(date.getMinutes())+p(date.getSeconds());
 }
 function timestampIso(date=new Date()){return date.toISOString()}
 function captureOnnxPieceReferences(placement,orientation){
@@ -350,19 +350,30 @@ function captureOnnxPieceReferences(placement,orientation){
   const file=orientation==='black'?7-c:c,rank=orientation==='black'?r+1:8-r;
   if(!(rank===1||rank===8||((rank===2||rank===7)&&file<2)))continue;
   const row=orientation==='black'?rank-1:8-rank,col=orientation==='black'?7-file:file,tile=onnxCanvas.width/8;
-  const canvas=document.createElement('canvas');canvas.width=canvas.height=160;
-  canvas.getContext('2d').drawImage(onnxCanvas,col*tile,row*tile,tile,tile,0,0,160,160);
+  const canvas=document.createElement('canvas');canvas.width=canvas.height=400;
+  const ctx=canvas.getContext('2d');ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+  // Enlarge the complete square crop and store it losslessly. The ONNX input
+  // is the source, so no extra JPEG compression is introduced here.
+  ctx.drawImage(onnxCanvas,col*tile,row*tile,tile,tile,0,0,400,400);
   const color=piece===piece.toUpperCase()?'white':'black',type=piece.toLowerCase(),square='abcdefgh'[file]+rank;
-  const name='reference_'+color+'_'+type+'_'+square+'_'+stamp+'.jpg';
-  onnxPieceReferences.push({name,data:canvas.toDataURL('image/jpeg',.88).split(',')[1],piece,color,type,square,capturedAt:timestampIso()});
+  const name='reference_'+color+'_'+type+'_'+square+'_'+stamp+'.png';
+  onnxPieceReferences.push({name,data:canvas.toDataURL('image/png').split(',')[1],piece,color,type,square,capturedAt:timestampIso()});
  }
  updateMoveImageControls();
+}
+function captureOnnxObservedBoardImage(placement,photo){
+ if($('saveMoveImages').value!=='yes'||!photo||!onnxCanvas.width)return null;
+ if(onnxLastSavedBoardPhoto&&photographDifference(onnxLastSavedBoardPhoto,photo).every(v=>v<2.2))return null;
+ const when=new Date(),stamp=timestampFileStamp(when),index=onnxMoveImages.length+1;
+ const name='board_'+String(index).padStart(4,'0')+'_'+stamp+'.jpg';
+ const item={name,data:onnxCanvas.toDataURL('image/jpeg',.96).split(',')[1],timestamp:timestampIso(when),placement,ply:game?game.history().length:0};
+ onnxMoveImages.push(item);onnxLastSavedBoardPhoto=new Uint8ClampedArray(photo);updateMoveImageControls();return item;
 }
 function captureOnnxMoveImage(move,fen){
  if($('saveMoveImages').value!=='yes'||!latestFlatPixels)return null;
  const when=new Date(),stamp=timestampFileStamp(when),safeSan=String(move.san).replace(/[^a-z0-9]+/gi,'_').replace(/^_|_$/g,'');
  const name='move_'+String(onnxMoveImages.length+1).padStart(3,'0')+'_'+stamp+'_'+safeSan+'.jpg';
- const item={name,data:onnxCanvas.toDataURL('image/jpeg',.9).split(',')[1],san:move.san,fen,timestamp:timestampIso(when)};
+ const item={name,data:onnxCanvas.toDataURL('image/jpeg',.96).split(',')[1],san:move.san,fen,timestamp:timestampIso(when)};
  onnxMoveImages.push(item);updateMoveImageControls();return item;
 }
 function updateVideoControls(){
@@ -370,6 +381,7 @@ function updateVideoControls(){
  $('downloadGameVideo').style.display=onnxVideoBlob?'inline-block':'none';
  $('stopGameVideo').style.display=active?'inline-block':'none';
  $('videoStatus').textContent=active?'Recording low-resolution ONNX board video…':onnxVideoBlob?'Video ready to download.':$('recordVideo').value==='yes'?'Video will start when the board position is initialized.':'Video recording is off.';
+ $('toggleGameVideo').textContent=active?'Recording…':'Start video recording';
 }
 function updateOnnxVideoFrame(){
  if(!onnxVideoCtx||!latestFlatPixels)return;
@@ -397,7 +409,8 @@ function downloadOnnxGameVideo(){
 }
 $('downloadGameVideo').onclick=downloadOnnxGameVideo;
 $('stopGameVideo').onclick=stopOnnxVideoRecording;
-$('recordVideo').onchange=()=>{if($('recordVideo').value==='no')stopOnnxVideoRecording();else if(game)startOnnxVideoRecording();updateVideoControls()};
+$('toggleGameVideo').onclick=()=>{if(onnxVideoRecorder&&onnxVideoRecorder.state==='recording'){stopOnnxVideoRecording();$('toggleGameVideo').textContent='Start video recording'}else{$('recordVideo').value='yes';startOnnxVideoRecording();$('toggleGameVideo').textContent='Recording…'}};
+$('recordVideo').onchange=()=>{if($('recordVideo').value==='no'){stopOnnxVideoRecording();$('toggleGameVideo').textContent='Start video recording'}else if(game){startOnnxVideoRecording();$('toggleGameVideo').textContent='Recording…'}updateVideoControls()};
 async function downloadOnnxMoveImages(){
  if(!onnxMoveImages.length&&!onnxPieceReferences.length){msg('No ONNX images or reference pictures have been saved.');return}
  if(!window.JSZip){msg('ZIP library is unavailable. Check your internet connection and try again.');return}
@@ -418,7 +431,10 @@ function onnxPgn(){
  return onnxSegments.map((seg,i)=>{
   const headers=[['Event','ONNX + Zen Mind Physical Board Scan'],['Site','Chess Move Scanner'],['Date',dateTag],['Round',String(i+1)],['White',$('whiteName').value.trim()||'White'],['Black',$('blackName').value.trim()||'Black'],['Result','*']];
   if(seg.start!==STD_START+' w KQkq - 0 1')headers.push(['SetUp','1'],['FEN',seg.start]);
-  const text=seg.moves.map((m,j)=>(m.color==='w'?(Math.floor(j/2)+1)+'. ':'')+m.san+(m.timestamp||m.image?' {'+(m.timestamp?'[%timestamp '+m.timestamp+']':'')+(m.image?' [%image '+m.image+']':'')+'}':'')).join(' ');
+  const annotatedMoves=seg.moves.map((m,j)=>({ply:j+1,text:(m.color==='w'?(Math.floor(j/2)+1)+'. ':'')+m.san+(m.timestamp||m.image?' {'+(m.timestamp?'[%timestamp '+m.timestamp+']':'')+(m.image?' [%image '+m.image+']':'')+'}':'' )}));
+  const boardEvents=onnxMoveImages.filter(x=>x.ply>=0).map(x=>({ply:x.ply,text:'{[%board-image '+x.timestamp+' '+x.name+']}' }));
+  const allEvents=[...annotatedMoves,...boardEvents].sort((a,b)=>a.ply-b.ply);
+  const text=allEvents.map(x=>x.text).join(' ');
   return headers.map(([k,v])=>'['+k+' "'+String(v).replace(/"/g,'\\"')+'"]').join('\n')+'\n\n'+(text?text+' ':'')+'*';
  }).join('\n\n')+'\n';
 }
@@ -486,7 +502,7 @@ function zenMoveCandidates(previousPhoto,currentPhoto){
 function commitOnnxMove(move,sourceLabel){
  if(!game||!move)return false;const previousFen=game.fen(),m=game.move({from:move.from,to:move.to,promotion:move.promotion||undefined});if(!m){msg('That move is no longer legal from the previous position.');return false;}
  onnxLastFen=game.fen();onnxLastOrientation=onnxConflict?.orientation||onnxLastOrientation;
- const savedImage=captureOnnxMoveImage(m,onnxLastFen),moveTimestamp=savedImage?.timestamp||timestampIso();if(!onnxCurrentSegment){onnxCurrentSegment={start:previousFen,moves:[]};onnxSegments.push(onnxCurrentSegment)}onnxCurrentSegment.moves.push({san:m.san,color:m.color,timestamp:moveTimestamp,image:savedImage?.name||''});physicalMoveLog.push({label:m.san,fen:game.fen(),previousFen,illegal:false});
+ const savedImage=null,moveTimestamp=timestampIso();if(!onnxCurrentSegment){onnxCurrentSegment={start:previousFen,moves:[]};onnxSegments.push(onnxCurrentSegment)}onnxCurrentSegment.moves.push({san:m.san,color:m.color,timestamp:moveTimestamp,image:savedImage?.name||''});physicalMoveLog.push({label:m.san,fen:game.fen(),previousFen,illegal:false});
  onnxLastPhoto=onnxConflict?.photo?new Uint8ClampedArray(onnxConflict.photo):(latestFlatPixels?new Uint8ClampedArray(latestFlatPixels):onnxLastPhoto);onnxLastInferencePhoto=onnxLastPhoto?new Uint8ClampedArray(onnxLastPhoto):null;onnxPendingPhoto=false;onnxConflict=null;closeMoveConflict();showMoves();drawPos(null);st(4,'recorded ✓','ok');msg('Recorded '+m.san+(sourceLabel?' · confirmed by '+sourceLabel:''));if(m.promotion)spk('Promotes to '+PN[m.promotion]);else sayMove(m);if(typeof sendCameraMoveOnline==='function')sendCameraMoveOnline(m,previousFen);return true;
 }
 function closeMoveConflict(){onnxConflictOpen=false;$('moveConflict').classList.remove('open')}
@@ -665,7 +681,7 @@ async function onnxStep(){
   onnxObservedPhoto=photo;
   if(!onnxPendingPhoto||now-onnxPendingSince<450)return;
   if(onnxLastInferencePhoto){const since=photographDifference(onnxLastInferencePhoto,photo);if(since.every(v=>v<2.2)){onnxPendingPhoto=false;return;}}
-  onnxBusy=true;onnxPendingPhoto=false;st(2,'one ONNX inference…');const result=await predictOnnxPlacement();if(!result.placement)throw new Error('Model returned an invalid board placement.');onnxLastOrientation=result.orientation;onnxLastInferencePhoto=photo;await onnxAcceptPosition(result.placement,result.orientation,result.occupancy);
+  onnxBusy=true;onnxPendingPhoto=false;st(2,'one ONNX inference…');const result=await predictOnnxPlacement();if(!result.placement)throw new Error('Model returned an invalid board placement.');onnxLastOrientation=result.orientation;onnxLastInferencePhoto=photo;if(game)captureOnnxObservedBoardImage(result.placement,photo);await onnxAcceptPosition(result.placement,result.orientation,result.occupancy);
  }catch(e){console.error(e);msg('ONNX inference error: '+e.message)}finally{onnxBusy=false;}
 }
 
