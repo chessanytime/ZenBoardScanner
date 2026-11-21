@@ -279,7 +279,7 @@ for(let c=0;c<2;c++){const a=[];for(let q=0;q<64;q++)if(E(q)&&(((q>>3)+(q&7))&1)
 const T=[];for(let q=0;q<64;q++){const c=((q>>3)+(q&7))&1;T[q]=E(q)?Math.max(fl,Math.min(cT[c],.5*d[q])):cT[c]}
 let ok=0,extra=0;const bad=[];for(let q=0;q<64;q++){if(E(q)){if(d[q]>T[q])ok++;else bad.push(nm(q))}else if(d[q]>T[q])extra++}
 thrQ=T;drawPos(d.map((v,q)=>v>T[q]),true);prog(ok/32);st(3,ok+'/32 pieces seen');
-if((ok==32&&extra<=3&&pst>=6)||(ok>=30&&pst>=12)||forceStart){forceStart=0;Nz=1.5;newGame();refF=null;prevF=null;stable=0;unclear=0;mode='rec';resetTracking();st(3,'32 pieces seen ✓ (rest assumed empty)','ok');st(4,'preparing both detectors…');prog(.9);msg('READY – all other squares are treated as empty'+(bad.length?' (weak pieces: '+bad.join(' ')+')':'')+'. Start playing, moves are recorded automatically.');msg('Starting position verified; wait for both reference images.');}
+if((ok==32&&extra<=3&&pst>=6)||(ok>=30&&pst>=12)||forceStart){forceStart=0;Nz=1.5;newGame();refF=null;prevF=null;stable=0;unclear=0;mode='rec';resetTracking();st(3,'Zen: '+ok+'/32; checking photo…');st(4,'preparing both detectors…');prog(.9);msg('Hold still. Zen setup complete; verifying all 64 squares in the starting photo. Do not play yet.');}
 else if(pst>=12)msg('Cannot see pieces on: '+bad.join(' ')+(extra?'; unexpected objects on '+extra+' middle squares':'')+'. Check the setup and light, or press Resync to start anyway.')}
 /* v18: track stable observations and classify square occupancy relative to
    the empty-board reference.  Never advance a game on a single noisy frame.
@@ -1423,11 +1423,11 @@ function labObs(p){const threshold=Math.max(.1,Math.min(2,Number($('labThreshold
 function labRenderObs(obs){const dst=$('labGrid'),expected=Logic.occFromChess(game);dst.replaceChildren();for(let r=0;r<8;r++)for(let c=0;c<8;c++){const q=r*8+c,i=Logic.cellToSq(r,c,'bottom'),el=document.createElement('div');el.textContent=Logic.sqName(i);el.title='Occupancy score '+obs.scores[q].toFixed(2);el.style.cssText='padding:5px 0;text-align:center;font-size:10px;border-radius:3px;background:'+(obs.grid[q]?'#247e63':'#273345')+';border:1px solid '+(obs.occ[i]!==expected[i]?'#ff777e':'transparent');dst.append(el);}}
 
 function comboReportZen(m,score,gap,features,pixels){comboZen={m,score,gap,features,pixels,fen:game.fen(),at:performance.now()};$('zenResult').textContent=m.san;$('zenEvidence').textContent='Verified · score '+score.toFixed(1)+' · lead '+gap.toFixed(1);}
-function comboBaseline(p,fp){
+function comboBaseline(p,fp,confirmedByUser=false){
  labReference={photo:p,fp};labFen=game.fen();labDraw('labPrevious',p);
  const raw=warp();acceptedFeatures=raw;acceptedFlatPixels=new Uint8ClampedArray(latestFlatPixels);saveLastGoodSnapshot(raw,acceptedFlatPixels);refF=raw;prevF=null;learnOccupied(raw);
  try{trainOccupancy(raw);}catch(e){occModelReady=false;console.warn(e);}
- comboClear();comboCooldown=performance.now()+250;st(3,'position verified ✓','ok');st(4,'recording – play!','ok');prog(1);$('modelStatus').textContent='Both detectors ready';labUI('Both reference images captured. Play one move at a time.');msg('READY — both detectors active.');readySnd();spk('Both detectors ready. Start playing.');
+ comboClear();comboCooldown=performance.now()+250;st(3,confirmedByUser?'Position confirmed by user':'All 64 squares verified ✓','ok');st(4,'recording – play!','ok');prog(1);$('modelStatus').textContent='Both detectors ready';labUI('Both reference images captured. Play one move at a time.');msg('READY TO PLAY — both detectors active.');readySnd();spk('Ready to play');
 }
 function comboCommit(m,reason){
  if(!game||!labReference||labFen!==game.fen())return;
@@ -1455,9 +1455,9 @@ function comboPhotoAnalyze(force=false){
  if(key!==labLastObservation){labLastObservation=key;labObservationSince=now;comboPhoto=null;comboDisputeAt=0;if(!force)return;}
  if(!force&&now-labObservationSince<Math.max(300,Number($('labDelay').value)||500))return;
  if(!labReference||labFen!==game.fen()){
-  if(none&&!force){st(3,none+' photo mismatches','bad');st(4,'waiting');labUI('Starting photo has '+none+' mismatches. Adjust threshold or confirm current position.');return;}
-  if(none&&force&&!confirm('The occupancy test disagrees on '+none+' squares. Does the physical board match the recorded position?'))return;
-  comboBaseline(p,fp);return;
+  if(none&&!force){st(3,none+' photo mismatches','bad');st(4,'waiting');msg('Not ready yet — verify the starting pieces and wait for detection.');labUI('Starting photo has '+none+' mismatches. Adjust threshold or confirm current position.');return;}
+  if(none&&force&&!confirm('The occupancy test disagrees on '+none+' squares. Only confirm if every piece is in the correct position on the physical board.'))return;
+  comboBaseline(p,fp,none!==0);return;
  }
  const ranked=Logic.rankMoves(game,obs.occ);
  if(!ranked.length)return;
