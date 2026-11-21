@@ -57,7 +57,6 @@ small{color:var(--mut)}
 <textarea id="illegalFenBox" readonly style="display:none" aria-label="Illegal move FEN positions"></textarea>
 <button id="exportIllegalFen" style="display:none">Export illegal-move FEN</button>
 
-<section style="border:2px solid #6ba46d;border-radius:12px;padding:12px;margin:12px 0;background:var(--card)"><strong>♟ TWO-PLAYER ONLINE CHESS + CAMERA SYNC</strong><div class="row"><input id="onlineRoomId" placeholder="Paste online game URL or Game ID" style="flex:1;min-width:260px"><select id="onlineRole"><option value="w">I play White</option><option value="b">I play Black</option></select><input id="onlineSeatToken" placeholder="Camera access token (optional if same browser)" style="flex:1;min-width:200px"><button id="connectOnlineCamera" class="p">Connect camera to game</button><button id="disconnectOnlineCamera">Disconnect</button></div><div class="row"><button id="syncOnlinePosition">Sync scanner to online game</button><label><input id="onlineSpeakRemote" type="checkbox" checked> Announce opponent moves</label></div><small id="onlineCameraStatus">Not connected. Create/join a game on the online page, then paste its game URL here. Camera moves are sent automatically after recognition.</small><p style="font-size:12px">When your opponent plays online, mirror their move on your physical board, then press Sync scanner to online game before your next move. Open the online game on this device first to claim your seat, or paste your camera access token from Online Chess v7. Illegal moves are kept locally because standard online chess only accepts legal moves.</p></section>
 <section id="liveControls" style="border:2px solid #e8b04a;border-radius:12px;padding:12px;margin:12px 0;background:var(--card)">
 <strong style="color:var(--ac);font-size:17px">● LIVE BROADCAST</strong>
 <div class="row"><button class="p" id="broadcastBtn" type="button">🔴 Start Live Broadcast</button><button id="stopBroadcastBtn" type="button" disabled>Stop Broadcast</button></div>
@@ -630,7 +629,6 @@ function finishMove(x,features,pixels,piece){
  proposal='';proposalCount=0;pendingVerification=null;uncertaintySince=0;
  motionAt=performance.now();clearSettled();
  physicalMoveLog.push({label:m.san,fen:game.fen(),previousFen,illegal:false});
- if(typeof sendCameraMoveOnline==='function')sendCameraMoveOnline(m,previousFen);
  m.captured?capSnd():beep(740,.08,.45);showMoves();msg('Recorded: '+m.san);sayMove(m);
  if(game.in_checkmate()){msg('Checkmate! Game over. Export PGN.');spk('Checkmate!')}else if(game.game_over())msg('Game over. Draw. Export PGN.');
 }
@@ -1162,7 +1160,6 @@ $('addManualMove').onclick=()=>{
  }
  if(!m){msg('Move not understood. Enter SAN (Nf3) or coordinates (g1f3).');return}
  physicalMoveLog.push({label:m.san,fen:game.fen(),previousFen,illegal:false});
- if(typeof sendCameraMoveOnline==='function')sendCameraMoveOnline(m,previousFen);
  $('manualMove').value='';syncEditedPosition();msg('Manually recorded: '+m.san);
 };
 $('manualMove').addEventListener('keydown',e=>{if(e.key==='Enter')$('addManualMove').click()});
@@ -1237,71 +1234,6 @@ async function stopLive(){
  catch(e){$('broadcastStatus').textContent='Stop failed: '+e.message}
  liveRef=null;$('broadcastBtn').disabled=false;$('stopBroadcastBtn').disabled=true;
  $('broadcastStatus').textContent='Broadcast ended.';
-}
-
-/* Firebase bridge for Online Chess v6/v7 format: fen, ply, moves, white/black token seats.
-   The server game is authoritative; never upload illegal or stale camera moves. */
-let cameraOnlineRef=null,cameraOnlineRole=null,cameraOnlineData=null,cameraOnlineLastCount=-1,cameraOnlineToken='';
-const onlineCameraStatus=t=>{$('onlineCameraStatus').textContent=t};
-function onlineMoves(v){return Array.isArray(v?.moves)?v.moves:Object.values(v?.moves||{});}
-function onlineReplay(v){const g=new Chess();for(const x of onlineMoves(v)){const raw=typeof x==='string'?x:(x.uci||x.san);if(!raw)return null;let m;if(/^[a-h][1-8][a-h][1-8][qrbn]?$/i.test(raw)){m=g.move({from:raw.slice(0,2),to:raw.slice(2,4),promotion:raw[4]||'q'});}else m=g.move(raw,{sloppy:true});if(!m)return null;}return g.fen()===v.fen?g:null;}
-function disconnectCameraOnline(){if(cameraOnlineRef)cameraOnlineRef.off('value',cameraOnlineListener);cameraOnlineRef=null;cameraOnlineRole=null;cameraOnlineData=null;cameraOnlineLastCount=-1;cameraOnlineToken='';onlineCameraStatus('Disconnected from online game.');}
-function cameraOnlineListener(snap){
- if(!snap.exists()){disconnectCameraOnline();onlineCameraStatus('Online game deleted.');return;}
- const incoming=snap.val(),old=cameraOnlineLastCount,arr=onlineMoves(incoming);
- cameraOnlineData=incoming;cameraOnlineLastCount=arr.length;
- if(old>=0&&arr.length>old){
-  const last=arr[arr.length-1],by=last?.by||((arr.length-1)%2?'b':'w');
-  if(by!==cameraOnlineRole){const san=typeof last==='string'?last:last.san||last.uci;onlineCameraStatus('Opponent played '+san+'. Mirror it on the physical board, then click Sync scanner to online game.');if($('onlineSpeakRemote').checked)spk('Opponent played '+san);}
- }else if(old<0)onlineCameraStatus('Connected as '+(cameraOnlineRole==='w'?'White':'Black')+'. Synchronize the physical board to the online position before play.');
-}
-$('connectOnlineCamera').onclick=async()=>{
- const raw=$('onlineRoomId').value.trim();let id=raw,linkToken='',linkColor='';
- try{if(raw.includes('://')||raw.includes('?')){const u=new URL(raw,location.href);id=u.searchParams.get('game')||'';linkToken=u.searchParams.get('key')||'';linkColor=u.searchParams.get('seat')||'';}}catch(e){id='';}
- if(!/^[\w-]{10,100}$/.test(id)){onlineCameraStatus('Paste a valid game URL or ID.');return;}
- if(!liveDb){onlineCameraStatus('Firebase unavailable.');return;}
- const color=linkColor==='w'||linkColor==='b'?linkColor:$('onlineRole').value;
- let seatToken=$('onlineSeatToken').value.trim()||linkToken;
- if(!seatToken){try{seatToken=localStorage.getItem('chess-seat-'+id)||'';}catch(e){}}
- if(!seatToken){onlineCameraStatus('Camera access token required. Open Online Chess v7 as this player, then copy its Camera connection link into the Game URL field.');return;}
- try{
-  const r=liveDb.ref('onlineChessGames/'+id),snap=await r.once('value'),v=snap.val();
-  if(!v){onlineCameraStatus('Game not found. Check the URL.');return;}
-  const seat=color==='w'?v.white:v.black;
-  if(!seat||seat.token!==seatToken){onlineCameraStatus('Seat token does not match '+(color==='w'?'White':'Black')+'. Use your own Camera connection link from Online Chess v7.');return;}
-  disconnectCameraOnline();cameraOnlineRef=r;cameraOnlineRole=color;cameraOnlineToken=seatToken;$('onlineRole').value=color;
-  r.on('value',cameraOnlineListener,e=>onlineCameraStatus('Firebase read failed: '+e.message));
- }catch(e){onlineCameraStatus('Connect failed: '+e.message);}
-};
-$('disconnectOnlineCamera').onclick=disconnectCameraOnline;
-$('syncOnlinePosition').onclick=()=>{
- if(!cameraOnlineData){onlineCameraStatus('Connect to a game first.');return;}
- const g=onlineReplay(cameraOnlineData);if(!g){onlineCameraStatus('Online history and position do not match. Cannot synchronize safely.');return;}
- if(!confirm('Have you physically set all pieces to match the online game? This will reset scanner tracking.'))return;
- game=g;physicalMoveLog=g.history({verbose:true}).map(m=>({label:m.san,fen:'',illegal:false}));hasIllegalMoves=false;
- resetTracking();showMoves();onlineCameraStatus('Scanner synchronized to online position. Wait for a stable physical board before recording.');
-};
-async function sendCameraMoveOnline(m,previousFen){
- if(!cameraOnlineRef||!cameraOnlineRole)return;
- const r=cameraOnlineRef,role=cameraOnlineRole,seatToken=cameraOnlineToken;let failure='Position mismatch';
- try{
-  const result=await r.transaction(old=>{
-   if(!old){failure='Game missing';return;}
-   const seat=role==='w'?old.white:old.black;
-   if(!seat||seat.token!==seatToken){failure='Camera seat no longer authorized';return;}
-   if(!old.white||!old.black){failure='Wait for opponent to join';return;}
-   if(old.fen!==previousFen){failure='Online board differs from scanner. Mirror opponent move and sync first.';return;}
-   const g=onlineReplay(old);if(!g){failure='Online history invalid';return;}
-   if(g.game_over()){failure='Game finished';return;}
-   if(g.turn()!==role){failure='Not your turn';return;}
-   const played=g.move({from:m.from,to:m.to,promotion:m.promotion||'q'});
-   if(!played){failure='Move not legal on online board';return;}
-   const arr=onlineMoves(old);arr.push({san:played.san,uci:played.from+played.to+(played.promotion||''),by:role});
-   old.moves=arr;old.fen=g.fen();old.ply=arr.length;old.updatedAt=firebase.database.ServerValue.TIMESTAMP;
-   return old;
-  },undefined,false);
-  onlineCameraStatus(result.committed?'Camera move '+m.san+' sent to opponent.':'Camera move NOT sent: '+failure+'; click Sync scanner to online game after setting physical pieces correctly.');
- }catch(e){onlineCameraStatus('Camera move send failed: '+e.message);}
 }
 
 $('broadcastBtn').onclick=startLive;
