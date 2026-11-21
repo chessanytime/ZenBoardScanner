@@ -4,90 +4,42 @@
 <title>Zen Board Scanner</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 <style>
-:root{--bg:#10151a;--fg:#e9eef2;--card:#1a222a;--mut:#8fa0ad;--ok:#22c55e;--bad:#ef4444;--ac:#e8b04a}
-@media(prefers-color-scheme:light){:root{--bg:#f3efe6;--fg:#1c2329;--card:#fff;--mut:#5b6872}}
+:root{color-scheme:dark;--bg:#0c111b;--fg:#eef2f8;--card:#151e2b;--mut:#9ba9bd;--ok:#5ee1ad;--bad:#ff777e;--ac:#55ddb1;--line:#2b384a}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,sans-serif;padding:max(10px,env(safe-area-inset-top)) 10px max(14px,env(safe-area-inset-bottom));max-width:720px;margin-inline:auto}
-h1{font:700 20px Georgia,serif;margin:4px 0 8px}
-#stage{position:relative;background:#000;border-radius:10px;overflow:hidden;min-height:120px}
-#v{display:block;width:100%;height:auto}
-#ov{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
-#msg{margin:8px 0 6px;font-weight:600;min-height:42px}
-#barw{height:8px;background:var(--card);border-radius:4px;overflow:hidden}
-#bar{height:100%;width:0;background:var(--ac);transition:width .2s}
-.row{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
-button{flex:1 1 44%;padding:11px 8px;border:0;border-radius:8px;background:var(--card);color:var(--fg);font:600 14px system-ui;border:1px solid #8fa0ad55}
-select.camera-select{flex:1 1 44%;min-width:0;padding:11px 8px;border-radius:8px;background:var(--card);color:var(--fg);border:1px solid #8fa0ad55;font:600 14px system-ui}
-button.p{background:var(--ac);color:#10151a;border-color:var(--ac)}
-ol{padding-left:20px;margin:8px 0}li{margin:4px 0}
-b.ok{color:var(--ok)}b.bad{color:var(--bad)}b{color:var(--mut);font-weight:600}
-.cv{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start}
-.cv figure{margin:0;flex:1 1 200px}figcaption{color:var(--mut);font-size:12px;margin-bottom:3px}
-canvas.sq{width:100%;max-width:320px;border-radius:6px;background:var(--card)}
-#moves{background:var(--card);border-radius:8px;padding:8px;min-height:40px;margin-top:6px;word-break:break-word}
-small{color:var(--mut)}
-#last{font:700 22px Georgia,serif;margin:8px 0 4px;min-height:30px;color:var(--ac)}
-#moves{max-height:200px;overflow:auto;font:15px/1.6 ui-monospace,monospace}
-#promotionPrompt{display:none;position:fixed;inset:0;z-index:1000;background:#000b;align-items:center;justify-content:center;padding:16px}
-#promotionPrompt.open{display:flex}
-#promotionPanel{width:min(100%,460px);padding:20px;background:var(--card);border:2px solid var(--ac);border-radius:14px;text-align:center;box-shadow:0 12px 50px #0008}
-#promotionChoices{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
-#promotionChoices button{min-width:0;font-size:18px;padding:16px 8px}
-#pgnbox{display:none;width:100%;height:90px;margin-top:6px;background:var(--card);color:var(--fg);border:1px solid #8fa0ad55;border-radius:8px;padding:6px;font:12px monospace}
+body{margin:0;background:radial-gradient(ellipse at 50% 0,#1b3040 0,transparent 45%),var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif;padding:max(18px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left));max-width:1120px;margin-inline:auto}
+header{display:flex;align-items:center;gap:12px;margin:0 0 22px}.brandmark{display:grid;place-items:center;width:48px;height:48px;border:1px solid #4bd5ad77;border-radius:15px;background:#143d3b;color:#69e5bb;font:32px Georgia,serif;flex:none}h1{font-size:23px;letter-spacing:-.8px;line-height:1.15;margin:0}.eyebrow{font-size:10px;font-weight:800;color:var(--ac);letter-spacing:1.6px;text-transform:uppercase}.subtitle{font-size:12px;color:var(--mut);margin-top:3px}.local{margin-left:auto;border:1px solid var(--line);color:var(--mut);border-radius:99px;padding:5px 9px;font-size:10px;white-space:nowrap}
+.workspace{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,340px);gap:16px;align-items:start}.stack{display:grid;gap:14px;min-width:0}.panel{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;min-width:0;box-shadow:0 6px 22px #0002}.panel h2{font-size:14px;margin:0 0 12px;letter-spacing:.2px}.panel-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}.panel-top h2{margin:0}.tag{font-size:10px;color:var(--mut);border:1px solid var(--line);border-radius:99px;padding:4px 8px;white-space:nowrap}
+#stage{position:relative;background:#080c13;border:1px solid var(--line);border-radius:12px;overflow:hidden;min-height:180px}#stage.active{min-height:0}#stage:not(.active)::before{content:"Camera preview • Start camera below";position:absolute;inset:0;display:grid;place-items:center;font-size:13px;color:var(--mut);pointer-events:none}#v{display:block;width:100%;height:auto}#ov{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+#msg{font-weight:600;font-size:13px;line-height:1.5;margin:12px 0 8px;min-height:38px}#barw{height:5px;background:#2b384a;border-radius:8px;overflow:hidden}#bar{height:100%;background:var(--ac);width:0;transition:width .2s}#modelStatus{display:block;margin-top:8px;font-size:11px}
+.row,.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.actions>*{flex:1 1 42%}.primary-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}.primary-actions #b1{grid-column:1/-1}
+button,select,input,textarea{font:inherit}button,select.camera-select,input{min-width:0;border:1px solid var(--line);border-radius:10px;background:#202b3a;color:var(--fg);padding:11px 10px;font-size:13px;font-weight:600;min-height:44px}button{cursor:pointer;transition:background .15s,transform .15s}button:hover{background:#2c3b4d}button:active{transform:scale(.98)}button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--ac);outline-offset:2px}button:disabled{opacity:.45;cursor:not-allowed}button.p{background:var(--ac);color:#09271f;border-color:var(--ac);font-weight:800}button.p:hover{background:#83ebc9}#b1{font-size:16px;min-height:50px}#redoRecording{background:#202b3a;color:var(--fg);border-color:var(--line)}#b12{width:100%;margin-top:10px}
+.steps{list-style:none;padding:0;margin:0;display:grid;gap:10px;counter-reset:step}.steps li{display:flex;align-items:center;gap:9px;font-size:12px;counter-increment:step}.steps li::before{content:counter(step);width:24px;height:24px;display:grid;place-items:center;border:1px solid var(--line);border-radius:50%;font-size:11px;font-weight:800;color:var(--mut);flex:none}.steps li b{margin-left:auto;font-size:11px;text-align:right}b.ok{color:var(--ok)}b.bad{color:var(--bad)}b{color:var(--mut)}
+small,.help{color:var(--mut);font-size:12px}.help{margin:10px 0 0;line-height:1.55}.move-label{font-size:10px;text-transform:uppercase;letter-spacing:1.3px;color:var(--mut);font-weight:700}#last{font-size:32px;font-weight:800;letter-spacing:-1px;color:var(--ac);margin:0 0 10px;min-height:45px}#moves{background:#0e1621;border-radius:10px;border:1px solid var(--line);padding:10px;min-height:78px;max-height:220px;overflow:auto;word-break:break-word;font:14px/1.8 ui-monospace,monospace}#manualMove{width:100%;flex:1 1 100%;min-width:0!important}#manualMove::placeholder{color:#8e9caf}#pgnbox,#illegalFenBox{width:100%;height:100px;margin-top:10px;background:#0e1621;color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px;font:12px monospace}#pgnbox{display:none}#exportIllegalFen{width:100%;margin-top:10px}
+details.panel{padding:0}details>summary{padding:15px 16px;cursor:pointer;list-style:none;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:space-between}details>summary::-webkit-details-marker{display:none}details>summary::after{content:"+";color:var(--ac);font-size:20px;line-height:1}details[open]>summary::after{content:"−"}details[open]>summary{border-bottom:1px solid var(--line)}.detail-body{padding:0 16px 16px}.field{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--mut);flex:1 1 42%;min-width:0}.field input,.field select{width:100%;max-width:none!important}.cv{display:grid;grid-template-columns:1fr 1fr;gap:10px}.cv figure{margin:0;min-width:0}figcaption{color:var(--mut);font-size:11px;margin-bottom:6px}canvas.sq{display:block;width:100%;max-width:320px;border-radius:8px;background:#0e1621}
+#promotionPrompt{display:none;position:fixed;inset:0;z-index:1000;background:#000c;align-items:center;justify-content:center;padding:16px}#promotionPrompt.open{display:flex}#promotionPanel{width:min(100%,460px);padding:20px;background:var(--card);border:2px solid var(--ac);border-radius:14px;text-align:center;box-shadow:0 12px 50px #0008}#promotionChoices{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}#promotionChoices button{font-size:18px;padding:16px 8px}
+@media(max-width:760px){body{padding-left:12px;padding-right:12px}.workspace{grid-template-columns:1fr;gap:12px}.stack{display:contents}.camera-panel{order:0}.steps-panel{order:1}.record-panel{order:2}.setup-panel{order:3}.player-panel{order:4}.diagnostics-panel{order:5}header{margin-bottom:15px}.panel{padding:13px;border-radius:15px}.local{display:none}.cv{grid-template-columns:1fr 1fr}h1{font-size:21px}}
 </style></head><body>
-<h1>Zen Board Scanner</h1>
+<header><div class="brandmark" aria-hidden="true">♞</div><div><div class="eyebrow">Zen Mind Chess Academy</div><h1>Zen Board Scanner</h1><div class="subtitle">Physical board · automatic move recording</div></div><span class="local">LOCAL SCANNER</span></header>
+<main class="workspace">
+<div class="stack">
+<section class="panel camera-panel"><div class="panel-top"><h2>Board camera</h2><span class="tag">LIVE VIEW</span></div>
 <div id="stage"><video id="v" playsinline muted autoplay></video><canvas id="ov"></canvas></div>
-<div id="msg">Tap “Start camera”. Show the empty board with all 4 corners in view.</div>
-<div id="barw"><div id="bar"></div></div>
-<small id="modelStatus">Occupancy model: waiting for calibrated starting position</small><div id="last">—</div>
-<div id="moves">Recorded moves will appear here</div>
-<textarea id="pgnbox" readonly></textarea>
-<div class="row" style="margin:10px 0;align-items:center">
-<label>White player <input id="whiteName" placeholder="Optional" style="max-width:160px"></label>
-<label>Black player <input id="blackName" placeholder="Optional" style="max-width:160px"></label>
+<div id="msg" role="status" aria-live="polite">Start camera with an empty board and all four corners visible.</div><div id="barw"><div id="bar"></div></div><small id="modelStatus">Occupancy model: waiting for calibrated starting position</small>
+<div class="row"><label class="field">Board orientation<select id="viewSide" class="camera-select" aria-label="Camera board orientation"><option value="0">Camera: White side</option><option value="1">Camera: right side</option><option value="2">Camera: Black side</option><option value="3">Camera: left side</option></select></label></div><div class="primary-actions"><button class="p" id="b1">Start camera</button><button id="b2">Auto-detect board</button><button id="b3">Lock border</button></div></section>
+<section class="panel steps-panel"><h2>Setup progress</h2><ol class="steps"><li>Detect board border <b id="s1">waiting</b></li><li>Scan empty squares <b id="s2">waiting</b></li><li>Verify starting position <b id="s3">waiting</b></li><li>Record moves <b id="s4">waiting</b></li></ol></section>
+<details class="panel setup-panel"><summary>Camera &amp; recording settings</summary><div class="detail-body"><div class="row"><label class="field">Camera device<select id="cameraSelect" class="camera-select" aria-label="Choose smartphone camera"><option value="">Camera: auto (rear)</option></select></label></div><div class="actions"><button id="b8">Switch camera</button><button id="flashBtn" disabled>Flash: unavailable</button><button id="b9">Sound: on</button><button id="b11">Announce moves: on</button></div><p class="help">Mount the camera above the board. Keep all corners visible. Drag the corner handles if detection is incorrect, then lock the border. Recalibrate after moving the camera.</p></div></details>
+<details class="panel diagnostics-panel"><summary>Detection diagnostics</summary><div class="detail-body"><div class="actions"><button id="b15">Yellow diagnostics: off</button><button id="cvToggle">OpenCV: loading…</button></div><div class="cv" style="margin-top:12px"><figure><figcaption>Detected position</figcaption><canvas class="sq" id="pos" width="240" height="240"></canvas></figure><figure><figcaption>Flattened board</figcaption><canvas class="sq" id="flat" width="320" height="320"></canvas></figure></div><p class="help">Red: expected piece missing. Orange: unexpected piece.</p></div></details>
 </div>
-<div class="row" style="margin:10px 0;align-items:center">
-<input id="manualMove" placeholder="Move: e4, Nf3, e2e4" aria-label="Manual chess move" style="min-width:180px;flex:1">
-<button id="addManualMove">Add move</button>
-<button id="deleteLastMove">Delete last move</button>
-</div>
-<small>Manual moves accept SAN (Nf3, exd5, O-O) or coordinates (e2e4). To enter a physically played illegal move, use coordinates; it will be marked illegal. Delete last move removes the most recently recorded move. Illegal-move FEN snapshots are exported separately.</small>
-<textarea id="illegalFenBox" readonly style="display:none" aria-label="Illegal move FEN positions"></textarea>
-<button id="exportIllegalFen" style="display:none">Export illegal-move FEN</button>
-
-<div class="row">
-<button class="p" id="b1">Start camera</button>
-<button id="b2">Auto-detect board</button>
-<button id="b3">Lock border now</button>
-<select id="viewSide" class="camera-select" aria-label="Camera board orientation"><option value="0">Camera: White side</option><option value="1">Camera: right side</option><option value="2">Camera: Black side</option><option value="3">Camera: left side</option></select>
-<button id="b5">Resync</button>
-<button id="redoRecording" class="p">Restart recording</button>
-<button id="b8">Switch camera</button>
-<select id="cameraSelect" class="camera-select" aria-label="Choose smartphone camera"><option value="">Camera: auto (rear)</option></select>
-<button id="flashBtn" disabled>Flash: unavailable</button>
-<button id="b9">Sound: on</button>
-<button id="b11">Announce moves: on</button>
-<button id="b12" class="p">Export PGN file</button>
-<button id="b15">Yellow diagnostics: off</button>
-<button id="cvToggle">OpenCV: loading…</button>
-<button id="recoverBtn">Recover missed move</button>
-</div>
-<ol>
-<li>Detect board border <b id="s1">waiting</b></li>
-<li>Scan 64 squares (empty board) <b id="s2">waiting</b></li>
-<li>Set start position, verify 64 squares <b id="s3">waiting</b></li>
-<li>Recording moves <b id="s4">waiting</b></li>
-</ol>
-<small>Red thick border = searching. Green thick border = board found. If the border is off, drag the white dots onto the board corners and press “Lock border now”. Position the phone above the centre of the board, looking down as vertically as possible. It may be mounted from White, Black, left or right: choose the camera side above. Ensure all squares and pieces remain visible. Changing camera position requires recalibration.</small>
-<div class="cv" style="margin-top:10px">
-<figure><figcaption>Detected position (red = piece expected but not seen, orange = unexpected piece)</figcaption><canvas class="sq" id="pos" width="240" height="240"></canvas></figure>
-<figure><figcaption>Flattened view (all 64 squares; 28×28 pixel sampling per square)</figcaption><canvas class="sq" id="flat" width="320" height="320"></canvas></figure>
-</div>
+<div class="stack">
+<section class="panel record-panel"><div class="panel-top"><h2>Game recording</h2><span class="tag">PGN</span></div><div class="move-label">Last move</div><div id="last">—</div><div id="moves">Recorded moves will appear here</div><div class="actions"><input id="manualMove" placeholder="Enter move: e4, Nf3, e2e4" aria-label="Manual chess move"><button id="addManualMove">Add move</button><button id="deleteLastMove">Undo move</button><button id="b5">Resync board</button><button id="recoverBtn">Recover missed move</button><button id="redoRecording" class="p">Restart recording</button></div><button id="b12" class="p">Export PGN file</button><textarea id="pgnbox" readonly></textarea><textarea id="illegalFenBox" readonly style="display:none" aria-label="Illegal move FEN positions"></textarea><button id="exportIllegalFen" style="display:none">Export illegal-move FEN</button><p class="help">Enter SAN or coordinate moves. Coordinate notation also supports recording physically played illegal moves.</p></section>
+<details class="panel player-panel"><summary>Player details (optional)</summary><div class="detail-body"><div class="row"><label class="field">White player<input id="whiteName" placeholder="Name"></label><label class="field">Black player<input id="blackName" placeholder="Name"></label></div></div></details>
+</div></main>
 <div id="promotionPrompt" role="dialog" aria-modal="true" aria-labelledby="promotionTitle">
 <div id="promotionPanel"><h2 id="promotionTitle">Pawn promotion</h2>
 <p id="promotionMessage">Choose a piece within 3 seconds.</p>
 <div id="promotionChoices"><button data-promote="q">Queen</button><button data-promote="r">Rook</button><button data-promote="n">Knight</button><button data-promote="b">Bishop</button></div>
 </div></div>
+
 <script async src="https://docs.opencv.org/4.x/opencv.js" onload="window.cvScriptLoaded=true" onerror="window.cvScriptFailed=true"></script>
 <script>
 if(typeof Chess==='undefined')document.getElementById('msg').textContent='chess.js failed to load. Check your internet connection and reload.';
@@ -1039,7 +991,8 @@ $('cvToggle').onclick=()=>{cvEnabled=!cvEnabled;$('cvToggle').textContent='OpenC
 setInterval(()=>{const ready=!!(window.cv&&window.cv.Mat&&window.cv.GaussianBlur);if(ready!==cvReady){cvReady=ready;$('cvToggle').textContent=ready?'OpenCV: '+(cvEnabled?'on':'off'):(window.cvScriptFailed?'OpenCV: unavailable':'OpenCV: loading…')}},1200);
 
 /* ---------- overlay ---------- */
-function draw(){requestAnimationFrame(draw);oc.clearRect(0,0,O.width,O.height);if(!quad)return;
+function draw(){requestAnimationFrame(draw);
+V.addEventListener('loadedmetadata',()=>document.getElementById('stage').classList.add('active'));oc.clearRect(0,0,O.width,O.height);if(!quad)return;
 const lw=O.width/70,sr=mode=='search'||mode=='manual',col=sr?'rgba(255,59,48,'+(.7+.3*Math.sin(Date.now()/180))+')':'#22c55e';
 oc.lineWidth=mode=='rec'?lw/3:lw;oc.strokeStyle=col;oc.lineJoin='round';oc.beginPath();quad.forEach((p,i)=>i?oc.lineTo(p[0],p[1]):oc.moveTo(p[0],p[1]));oc.closePath();oc.stroke();
 if(!sr){const H=hom([[0,0],[8,0],[8,8],[0,8]],rq());oc.lineWidth=1.5;oc.strokeStyle='rgba(255,255,255,.35)';oc.beginPath();for(let i=1;i<8;i++){let a=ap(H,i,0),b=ap(H,i,8);oc.moveTo(a[0],a[1]);oc.lineTo(b[0],b[1]);a=ap(H,0,i);b=ap(H,8,i);oc.moveTo(a[0],a[1]);oc.lineTo(b[0],b[1])}oc.stroke();const X=[[-1,-1],[9,-1],[9,9],[-1,9]].map(p=>ap(H,p[0],p[1]));oc.save();oc.setLineDash([lw,lw]);oc.strokeStyle='rgba(80,200,255,.9)';oc.lineWidth=lw/4;oc.beginPath();X.forEach((p,i)=>i?oc.lineTo(p[0],p[1]):oc.moveTo(p[0],p[1]));oc.closePath();oc.stroke();oc.restore()}
