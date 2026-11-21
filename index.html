@@ -37,9 +37,10 @@ small{color:var(--mut)}
 #promotionChoices button{min-width:0;font-size:18px;padding:16px 8px}
 #pgnbox{display:none;width:100%;height:90px;margin-top:6px;background:var(--card);color:var(--fg);border:1px solid #8fa0ad55;border-radius:8px;padding:6px;font:12px monospace}
 </style></head><body>
-<h1>Chess Move Scanner v46</h1>
+<h1>Chess Move Scanner v47</h1>
+<label for="calibrationMode"><strong>Empty-board calibration:</strong> <select id="calibrationMode" class="camera-select"><option value="full" selected>Yes — calibrate empty board (recommended)</option><option value="skip">No — start with pieces already set up</option></select></label><p><small>Choose before locking the border. Skipping estimates empty squares from the four empty middle ranks of the standard starting position.</small></p>
 <div id="stage"><video id="v" playsinline muted autoplay></video><canvas id="ov"></canvas></div>
-<div id="msg">Tap “Start camera”. Show the empty board with all 4 corners in view.</div>
+<div id="msg">Choose calibration mode, then tap “Start camera”. Show all four corners; use manual border locking if pieces obscure the checkerboard.</div>
 <div id="barw"><div id="bar"></div></div>
 <small id="modelStatus">Occupancy model: waiting for calibrated starting position</small><div id="last">—</div>
 <div id="moves">Recorded moves will appear here</div>
@@ -88,7 +89,7 @@ small{color:var(--mut)}
 </div>
 <ol>
 <li>Detect board border <b id="s1">waiting</b></li>
-<li>Scan 64 squares (empty board) <b id="s2">waiting</b></li>
+<li>Scan 64 squares / empty-board calibration <b id="s2">waiting</b></li>
 <li>Set start position, verify 64 squares <b id="s3">waiting</b></li>
 <li>Recording moves <b id="s4">waiting</b></li>
 </ol>
@@ -220,7 +221,21 @@ for(let q=0;q<64;q++){for(let k=0;k<48;k++)A[q*K+k]=Math.min(255,F[q*K+k]*g);A[q
 function startSearch(m){mode=m||'search';found=0;lastQ=null;t0=Date.now();st(1,m=='manual'?'drag corners, then Lock':'searching…');st(2,'waiting');st(3,'waiting');st(4,'waiting');prog(0);
 msg(m=='manual'?'Drag the 4 white dots onto the board corners, then tap “Lock border now”.':'Searching for the board… hold steady, all 4 corners in view. You can also drag the dots yourself.')}
 function extOut(){const H=hom([[0,0],[8,0],[8,8],[0,8]],rq());return[[-1,-1],[9,-1],[9,9],[-1,9]].some(p=>{const[x,y]=ap(H,p[0],p[1]);return x<0||y<0||x>O.width||y>O.height})}
-function lock(a){occModelReady=false;occModel=null;mode='scan';n=0;acc=null;colorChk=0;st(1,'locked ✓','ok');st(2,'scanning…');prog(0);msg('Border locked. Keep the board EMPTY – scanning squares…'+(extOut()?'  ⚠ The blue dashed capture area goes outside the picture – move the camera back a little so it fits.':''));a?foundSnd():beep(660,.12,.45)}
+let skippedCalibration=false;
+function estimateEmptyReference(F){
+ const R=new Float32Array(F), groups=[[],[]];
+ for(let q=16;q<48;q++)groups[((q>>3)+(q&7))&1].push(q);
+ for(let q=0;q<64;q++){if(q>=16&&q<48)continue;const same=groups[((q>>3)+(q&7))&1];for(let k=0;k<K;k++){const v=same.map(i=>F[i*K+k]).sort((a,b)=>a-b);R[q*K+k]=(v[7]+v[8])/2;}}
+ return R;
+}
+function quickSetup(){
+ skippedCalibration=true;base=null;occModel=null;occModelReady=false;mode="quick";n=0;acc=null;pst=0;prevF=null;forceStart=0;thrQ=null;resetTracking();st(2,"skipped — estimated reference","ok");st(3,"set standard starting position");st(4,"waiting");prog(0);msg("Place all 32 pieces in the standard starting position. Select the correct camera side and keep hands away. Empty-board calibration is skipped.");
+}
+function quickStep(){
+ const F=warp();if(!prevF){prevF=F;return;}let motion=0;for(let q=0;q<64;q++)motion+=sd(F,prevF,q)/64;prevF=F;if(motion>5){n=0;acc=null;return;}acc=acc||new Float32Array(F.length);for(let i=0;i<F.length;i++)acc[i]+=F[i];n++;prog(Math.min(1,n/6));if(n<6)return;
+ base=estimateEmptyReference(acc.map(v=>v/n));mode="pieces";n=0;acc=null;pst=0;prevF=null;colorChk=1;thrQ=null;st(2,"estimated from middle ranks","ok");msg("Estimated empty squares from ranks 3–6. Checking the standard starting position. Press Resync only if the physical setup is correct.");
+}
+function lock(a){skippedCalibration=$("calibrationMode").value==="skip";if(skippedCalibration){st(1,"locked ✓","ok");quickSetup();a?foundSnd():beep(660,.12,.45);return;}occModelReady=false;occModel=null;mode='scan';n=0;acc=null;colorChk=0;st(1,'locked ✓','ok');st(2,'scanning…');prog(0);msg('Border locked. Keep the board EMPTY – scanning squares…'+(extOut()?'  ⚠ The blue dashed capture area goes outside the picture – move the camera back a little so it fits.':''));a?foundSnd():beep(660,.12,.45)}
 function detectByContours(){
  if(!(window.cv&&cv.Mat&&cv.findContours))return null;
  let src,gray,blur,edges,contours,hierarchy;
@@ -312,7 +327,7 @@ function searchStep(){
   st(1,'checking 64 squares…');
  }else{found=0;lastQ=null;prog(0)}
  if(searchAttempt%4===0&&!c)st(1,'searching ('+searchAttempt+' frames)…');
- if(Date.now()-t0>7000)msg('Board not verified automatically. Show the full empty checkerboard, or drag the 8 border dots and press Lock border now.');
+ if(Date.now()-t0>7000)msg('Board not verified automatically. Show the full checkerboard, or drag the border dots and press Lock border now.');
 }
 function scanStep(){const F=warp();acc=acc||new Float32Array(F.length);for(let i=0;i<F.length;i++)acc[i]+=F[i];n++;prog(n/6);st(2,'squares '+Math.min(64,Math.round(n*64/6))+'/64');tick(n/6);
 if(n<6)return;base=acc.map(v=>v/6);const L=[];let m=0;for(let q=0;q<64;q++){L[q]=lum(base,q);m+=L[q]/64}let c=0;for(let q=0;q<64;q++){const r=q>>3,f=q&7;c+=Math.sign(L[q]-m)*(((f+r)&1)?-1:1)}
@@ -324,7 +339,7 @@ let g=0;for(let q=0;q<64;q++)g+=sd(F,prevF,q);g/=64;prevF=F;
 const E=q=>{const r=q>>3;return r<2||r>5},d=[],emD=[];let mo=0;
 for(let q=0;q<64;q++){d[q]=sd(F,base,q);if(E(q))mo+=d[q]/32;else emD.push(d[q])}
 const disp=thrQ||new Array(64).fill(Math.max(8,mo*.4));drawPos(d.map((v,q)=>v>disp[q]),true);
-if(mo<6){pst=0;st(3,'waiting for pieces…');prog(0);return}
+if(mo<6&&!forceStart){pst=0;st(3,'waiting for pieces…');prog(0);return}
 if(g>5){pst=0;msg('Hold still… (hands away from the board)');return}
 if(++pst<4)return;
 if(!colorChk){colorChk=1;let t=0,b=0;for(let q=0;q<16;q++)t+=(lum(F,q)-lum(base,q))/16;for(let q=48;q<64;q++)b+=(lum(F,q)-lum(base,q))/16;
@@ -892,7 +907,7 @@ function recStep(){
  clearSettled();
  if(!acceptedFeatures){
   acceptedFeatures=averaged;acceptedFlatPixels=new Uint8ClampedArray(latestFlatPixels);saveLastGoodSnapshot(averaged,acceptedFlatPixels);refF=averaged;learnOccupied(averaged);
-  try{trainOccupancy(averaged)}catch(e){console.warn('Training fallback:',e);occModelReady=false}
+  if(!skippedCalibration){try{trainOccupancy(averaged)}catch(e){console.warn('Training fallback:',e);occModelReady=false}}else{$("modelStatus").textContent="Occupancy: estimated empty-square reference (no empty-board photo)";occModelReady=false;}
   msg('Photo comparison ready. Move a piece and remove your hand.');return;
  }
  const aligned=normalizeAgainst(averaged,acceptedFeatures);
@@ -1179,12 +1194,13 @@ $('whiteName').addEventListener('input',()=>{});$('blackName').addEventListener(
 $('b1').onclick=cam;
 $('b2').onclick=()=>{if(stream)startSearch()};
 $('b3').onclick=()=>{if(stream&&(mode=='search'||mode=='manual'))lock(false)};
-$('b4').onclick=()=>{rot=(rot+1)%4;$('viewSide').value=String(rot);if(mode=='scan'){n=0;acc=null}if(mode==='rec'||mode==='pieces'){mode='scan';n=0;acc=null;msg('Orientation changed: rescan the EMPTY board to avoid wrong moves.')}else msg('Board rotated 90°.')};
-$('viewSide').onchange=e=>{rot=Number(e.target.value);if(stream&&quad){mode='scan';n=0;acc=null;refF=null;prevF=null;msg('Camera side selected. Clear the board temporarily to recalibrate empty squares.');}};
+$('b4').onclick=()=>{rot=(rot+1)%4;$('viewSide').value=String(rot);if(mode=='scan'){n=0;acc=null}if(mode==='rec'||mode==='pieces'||mode==='quick'){if(skippedCalibration){quickSetup();return;}mode='scan';n=0;acc=null;msg('Orientation changed: rescan the EMPTY board to avoid wrong moves.')}else msg('Board rotated 90°.')};
+$('viewSide').onchange=e=>{rot=Number(e.target.value);if(stream&&quad&&['rec','pieces','scan','quick'].includes(mode)){if(skippedCalibration){quickSetup();return;}mode='scan';n=0;acc=null;refF=null;prevF=null;msg('Camera side selected. Clear the board temporarily to recalibrate empty squares.');}};
 $('b5').onclick=()=>{if(mode=='pieces'){forceStart=1;pst=Math.max(pst,4);msg('Starting with the current view…');return}refF=null;prevF=null;stable=0;unclear=0;resetTracking();msg('Resynced – make sure the real board matches the on-screen position, then make your next move.')};
 $('b6').onclick=deleteRecordedLast;
-$('b7').onclick=()=>{cancelPromotion();if(base){newGame();mode='pieces';ready=0;colorChk=1;pst=0;prevF=null;thrQ=null;forceStart=0;st(4,'waiting');st(3,'set start position');msg('Restarted – set the start position again.')}};
+$('b7').onclick=()=>{cancelPromotion();if(skippedCalibration&&quad&&stream){quickSetup();return;}if(base){newGame();mode='pieces';ready=0;colorChk=1;pst=0;prevF=null;thrQ=null;forceStart=0;st(4,'waiting');st(3,'set start position');msg('Restarted – set the start position again.')}};
 $('redoRecording').onclick=()=>{
+ if(skippedCalibration&&quad&&stream&&["quick","pieces","rec"].includes(mode)){quickSetup();return;}
  if(!stream||!base||!quad||!['pieces','rec'].includes(mode)){
   msg('First finish empty-board calibration and lock the board. Re Do Recording keeps that calibration.');return;
  }
@@ -1333,7 +1349,7 @@ $('stopBroadcastBtn').onclick=stopLive;
 $('whiteName').addEventListener('input',publishLive);
 $('blackName').addEventListener('input',publishLive);
 
-const loop=()=>{const t=Date.now();if(stream&&V.videoWidth&&W.width){wc.drawImage(V,0,0,W.width,W.height);try{({search:searchStep,scan:scanStep,pieces:pieceStep,rec:recStep}[mode]||(()=>{}))()}catch(e){console.error(e)}}
+const loop=()=>{const t=Date.now();if(stream&&V.videoWidth&&W.width){wc.drawImage(V,0,0,W.width,W.height);try{({search:searchStep,scan:scanStep,pieces:pieceStep,quick:quickStep,rec:recStep}[mode]||(()=>{}))()}catch(e){console.error(e)}}
 setTimeout(loop,Math.max(20,(mode=='rec'?65:250)-(Date.now()-t)))};loop();
 requestAnimationFrame(draw);
 </script></body></html>
