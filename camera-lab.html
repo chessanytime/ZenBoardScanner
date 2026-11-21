@@ -27,7 +27,7 @@ details.panel{padding:0}details>summary{padding:15px 16px;cursor:pointer;list-st
 <section class="panel camera-panel"><div class="panel-top"><h2>Board camera</h2><span class="tag">LIVE VIEW</span></div>
 <div id="stage"><video id="v" playsinline muted autoplay></video><canvas id="ov"></canvas></div>
 <div id="msg" role="status" aria-live="polite">Arrange the 32 pieces, select camera orientation, and start camera with all four board corners visible.</div><div id="barw"><div id="bar"></div></div><small id="modelStatus">Photo occupancy: waiting for board lock</small>
-<div class="row"><label class="field">Board orientation<select id="viewSide" class="camera-select" aria-label="Camera board orientation"><option value="0">Camera: White side</option><option value="1">Camera: right side</option><option value="2">Camera: Black side</option><option value="3">Camera: left side</option></select></label></div><div class="mode-picker"><div class="mode-title">Move detection mode</div><div class="mode-options" role="radiogroup" aria-label="Move detection mode"><label><input type="radio" name="labModeChoice" value="auto" id="labAuto" checked><span><strong>Automatic</strong><small>Play on the board; moves detected automatically</small></span></label><label><input type="radio" name="labModeChoice" value="manual" id="labManual"><span><strong>Manual capture</strong><small>Tap the button after each move</small></span></label></div><p class="help" id="labModeHelp">Automatic mode: the scanner captures stable board photos and records legal moves.</p></div><div class="primary-actions"><button class="p" id="b1">Start camera</button><button id="b2">Auto-detect board</button><button id="b3">Lock border</button></div></section>
+<div class="row"><label class="field">Board orientation<select id="viewSide" class="camera-select" aria-label="Camera board orientation"><option value="0">Camera: White side</option><option value="1">Camera: right side</option><option value="2">Camera: Black side</option><option value="3">Camera: left side</option></select></label></div><div class="mode-picker"><div class="mode-title">Move detection mode</div><div class="mode-options" role="radiogroup" aria-label="Move detection mode"><label><input type="radio" name="labModeChoice" value="auto" id="labAuto" checked><span><strong>Automatic</strong><small>Play on the board; moves detected automatically</small></span></label><label><input type="radio" name="labModeChoice" value="manual" id="labManual"><span><strong>Manual capture</strong><small>Tap the button after each move</small></span></label></div><p class="help" id="labModeHelp">Automatic mode: the scanner captures stable board photos and records legal moves.</p></div><div class="row"><label class="field">Move detection algorithm<select id="labAlgorithm" class="camera-select"><option value="original" selected>1. Original Camera Lab</option><option value="direct">2. Direct photo occupancy</option><option value="hybrid">3. Hybrid (recommended)</option></select></label></div><p class="help" id="labAlgorithmHelp">Existing legal-move occupancy analysis.</p><div class="primary-actions"><button class="p" id="b1">Start camera</button><button id="b2">Auto-detect board</button><button id="b3">Lock border</button></div></section>
 <section class="panel steps-panel"><h2>Setup progress</h2><ol class="steps"><li>Detect board border <b id="s1">waiting</b></li><li>Refine board photo <b id="s2">waiting</b></li><li>Verify starting position <b id="s3">waiting</b></li><li>Record moves <b id="s4">waiting</b></li></ol></section>
 <details class="panel setup-panel"><summary>Camera &amp; recording settings</summary><div class="detail-body"><div class="row"><label class="field">Camera device<select id="cameraSelect" class="camera-select" aria-label="Choose smartphone camera"><option value="">Camera: auto (rear)</option></select></label></div><div class="actions"><button id="b8">Switch camera</button><button id="flashBtn" disabled>Flash: unavailable</button><button id="b9">Sound: on</button><button id="b11">Announce moves: on</button></div><p class="help">Mount the camera above the board. Keep all corners visible. Drag the corner handles if detection is incorrect, then lock the border. Recalibrate after moving the camera.</p></div></details>
 <details class="panel diagnostics-panel"><summary>Detection diagnostics</summary><div class="detail-body"><div class="actions"><button id="b15">Yellow diagnostics: off</button><button id="cvToggle">OpenCV: loading…</button></div><div class="cv" style="margin-top:12px"><figure><figcaption>Detected position</figcaption><canvas class="sq" id="pos" width="240" height="240"></canvas></figure><figure><figcaption>Flattened board</figcaption><canvas class="sq" id="flat" width="320" height="320"></canvas></figure></div><p class="help">Red: expected piece missing. Orange: unexpected piece.</p></div></details>
@@ -36,7 +36,7 @@ details.panel{padding:0}details>summary{padding:15px 16px;cursor:pointer;list-st
 <section class="panel record-panel"><div class="panel-top"><h2>Photo occupancy detection</h2><span class="tag">NO ONNX</span></div>
 <div class="row"><label class="field">Occupancy threshold <input id="labThreshold" type="number" min="0.1" max="2" step="0.05" value="0.5"></label><label class="field">Stable delay (ms) <input id="labDelay" type="number" min="300" max="2000" step="100" value="500"></label></div>
 <div class="actions"><button id="labCapture" class="p">Capture &amp; Analyze now</button><button id="labBaseline">Confirm starting / current photo</button></div>
-<p id="labStatus" role="status" class="help">Start with all 32 pieces already in their standard positions. The first verified photo becomes the reference.</p><div class="cv"><figure><figcaption>Previous confirmed photo</figcaption><canvas id="labPrevious" class="sq" width="640" height="640"></canvas></figure><figure><figcaption>Latest refined photo</figcaption><canvas id="labCurrent" class="sq" width="640" height="640"></canvas></figure></div>
+<div id="labRoute" class="tag" style="display:inline-block;margin-top:12px">Original Camera Lab</div><p id="labChanges" class="help" style="display:none"></p><p id="labStatus" role="status" class="help">Start with all 32 pieces already in their standard positions. The first verified photo becomes the reference.</p><div class="cv"><figure><figcaption>Previous confirmed photo</figcaption><canvas id="labPrevious" class="sq" width="640" height="640"></canvas></figure><figure><figcaption>Latest refined photo</figcaption><canvas id="labCurrent" class="sq" width="640" height="640"></canvas></figure></div>
 <div class="row"><button id="labDownload">Download latest photo</button></div><div id="labGrid" style="display:grid;grid-template-columns:repeat(8,1fr);gap:2px;margin:12px 0"></div><div id="labCandidates" class="actions"></div><p class="help">Green squares = occupied; dark squares = empty; red border = mismatch against the confirmed position. If occupancy cannot uniquely identify a move, choose the actual legal move below.</p><hr style="border:0;border-top:1px solid var(--line);margin:16px 0"><div class="panel-top"><h2>Recorded game</h2><span class="tag">PGN</span></div><div class="move-label">Last move</div><div id="last">—</div><div id="moves">Recorded moves will appear here</div><div class="actions"><input id="manualMove" placeholder="Enter move: e4, Nf3, e2e4" aria-label="Manual chess move"><button id="addManualMove">Add move</button><button id="deleteLastMove">Undo move</button><button id="b5">Resync board</button><button id="recoverBtn">Recover missed move</button><button id="redoRecording" class="p">Restart recording</button></div><button id="b12" class="p">Export PGN file</button><textarea id="pgnbox" readonly></textarea><textarea id="illegalFenBox" readonly style="display:none" aria-label="Illegal move FEN positions"></textarea><button id="exportIllegalFen" style="display:none">Export illegal-move FEN</button><p class="help">Enter SAN or coordinate moves. Coordinate notation also supports recording physically played illegal moves.</p></section>
 <details class="panel player-panel"><summary>Player details (optional)</summary><div class="detail-body"><div class="row"><label class="field">White player<input id="whiteName" placeholder="Name"></label><label class="field">Black player<input id="blackName" placeholder="Name"></label></div></div></details>
 </div></main>
@@ -1335,14 +1335,15 @@ const Logic = (() => {
     let acc = 0; for (let i = 0; i < 256; i++) { acc += h[i]; if (acc * 2 >= total) return i; }
     return 128;
   }
-  function classicalGrid(rgba, size = OUT, threshold = 0.5) {
+  function classicalGrid(rgba, size = OUT, threshold = 0.5, scope = 'middle') {
     const s = size / 8, m = Math.floor(s * 0.18);
     const box = (r, c) => [Math.floor(c * s + m), Math.floor((c + 1) * s - m), Math.floor(r * s + m), Math.floor((r + 1) * s - m)];
     // empty-square colour per parity, estimated from the four middle ranks
     const hist = [0, 1].map(() => [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)]);
-    for (let r = 2; r <= 5; r++) for (let c = 0; c < 8; c++) {
+    const first=scope==='whole'?0:2,last=scope==='whole'?7:5,step=scope==='whole'?1:2;
+    for (let r = first; r <= last; r++) for (let c = 0; c < 8; c++) {
       const [x0, x1, y0, y1] = box(r, c), p = (r + c) & 1;
-      for (let y = y0; y < y1; y += 2) for (let x = x0; x < x1; x += 2) {
+      for (let y = y0; y < y1; y += step) for (let x = x0; x < x1; x += step) {
         const i = (y * size + x) * 4;
         hist[p][0][rgba[i]]++; hist[p][1][rgba[i + 1]]++; hist[p][2][rgba[i + 2]]++;
       }
@@ -1375,9 +1376,9 @@ const Logic = (() => {
 
 
 const labSize=640, labRaw=document.createElement('canvas'),labRawCtx=labRaw.getContext('2d',{willReadFrequently:true});
-let labVerify=null,labLastObservation=null,labObservationSince=0,labReference=null,labLastFrame=null,labStableAt=0,labLastCheck=0,labPending=null,labLastPhoto=null,labFen=null,labMode='',labGeometry='',labMotion=false;
+let labFallbackKey='',labFallbackSince=0,labVerify=null,labLastObservation=null,labObservationSince=0,labReference=null,labLastFrame=null,labStableAt=0,labLastCheck=0,labPending=null,labLastPhoto=null,labFen=null,labMode='',labGeometry='',labMotion=false;
 const labUI=t=>{$('labStatus').textContent=t};
-function labReset(){labLastObservation=null;labObservationSince=0;labVerify=null;labReference=null;labLastFrame=null;labStableAt=0;labPending=null;labFen=null;labMotion=false;$('labCandidates').replaceChildren();$('labPrevious').getContext('2d').clearRect(0,0,640,640);}
+function labReset(){labFallbackKey='';labFallbackSince=0;$('labChanges').style.display='none';labLastObservation=null;labObservationSince=0;labVerify=null;labReference=null;labLastFrame=null;labStableAt=0;labPending=null;labFen=null;labMotion=false;$('labCandidates').replaceChildren();$('labPrevious').getContext('2d').clearRect(0,0,640,640);}
 function labPhoto(size,full=false){
  if(!quad||!V.videoWidth||!W.width||!stream)return null;
  let src,w,h;
@@ -1390,34 +1391,88 @@ function labPhoto(size,full=false){
 function labDraw(id,pixels){const can=$ (id),ctx=can.getContext('2d');ctx.putImageData(new ImageData(new Uint8ClampedArray(pixels),640,640),0,0);}
 function labFingerprint(p,size){const a=new Float32Array(64*16);let n=0;for(let r=0;r<8;r++)for(let c=0;c<8;c++)for(let y=1;y<=4;y++)for(let x=1;x<=4;x++){const px=Math.floor((c+x/5)*size/8),py=Math.floor((r+y/5)*size/8),i=(py*size+px)*4;a[n++]=(p[i]+p[i+1]+p[i+2])/3;}return a;}
 function labDifference(a,b){if(!a||!b)return Infinity;let mean=0;for(let i=0;i<a.length;i++)mean+=a[i]-b[i];mean/=a.length;let sum=0;for(let i=0;i<a.length;i++)sum+=Math.abs(a[i]-b[i]-mean);return sum/a.length;}
-function labObs(p){const threshold=Math.max(.1,Math.min(2,Number($('labThreshold').value)||.5));const {grid,scores}=Logic.classicalGrid(p,640,threshold);return {grid,scores,occ:Logic.gridToOcc(grid,'bottom')};}
+const labAlgorithm=()=>$('labAlgorithm').value;
+const labThresholdValue=()=>Math.max(.1,Math.min(2,Number($('labThreshold').value)||.5));
+function labObs(p,scope='middle'){const threshold=labThresholdValue();const {grid,scores}=Logic.classicalGrid(p,640,threshold,scope);return {grid,scores,occ:Logic.gridToOcc(grid,'bottom'),threshold};}
+function labDirectReference(){
+ if(!labReference)return null;
+ const threshold=labThresholdValue();
+ if(!labReference.direct||labReference.direct.threshold!==threshold)labReference.direct=labObs(labReference.photo,'whole');
+ return labReference.direct;
+}
+function occupancyDelta(before,after){
+ const removed=[],added=[];
+ for(let i=0;i<64;i++){if(before[i]&&!after[i])removed.push(Logic.sqName(i));else if(!before[i]&&after[i])added.push(Logic.sqName(i));}
+ return {removed,added};
+}
+function labShowDelta(delta){
+ const el=$('labChanges');el.style.display='block';el.textContent='Occupied → empty: '+(delta.removed.join(', ')||'none')+' | Empty → occupied: '+(delta.added.join(', ')||'none');
+}
+function labSimpleCandidates(delta){
+ if(delta.removed.length!==1||delta.added.length!==1)return [];
+ const from=delta.removed[0],to=delta.added[0];
+ return game.moves({verbose:true,square:from}).filter(m=>m.from===from&&m.to===to&&!m.captured&&!m.flags.includes('k')&&!m.flags.includes('q')&&!m.flags.includes('e'));
+}
+function labRoute(t){$('labRoute').textContent=t;}
+
 function labRenderObs(obs){const dst=$('labGrid'),expected=Logic.occFromChess(game);dst.replaceChildren();for(let r=0;r<8;r++)for(let c=0;c<8;c++){const q=r*8+c,i=Logic.cellToSq(r,c,'bottom'),el=document.createElement('div');el.textContent=Logic.sqName(i);el.title='Occupancy score '+obs.scores[q].toFixed(2);el.style.cssText='padding:5px 0;text-align:center;font-size:10px;border-radius:3px;background:'+(obs.grid[q]?'#247e63':'#273345')+';border:1px solid '+(obs.occ[i]!==expected[i]?'#ff777e':'transparent');dst.append(el);}}
-function labAcceptPhoto(photo,fp){labVerify=null;labReference={photo,fp};labLastObservation=null;labObservationSince=0;labFen=game.fen();labLastFrame=fp;labStableAt=0;labMotion=false;labPending=null;$('labCandidates').replaceChildren();labDraw('labPrevious',photo);}
-function labCommit(m,photo,fp){const old=game.fen(),played=game.move({from:m.from,to:m.to,promotion:m.promotion||'q'});if(!played){labUI('Move no longer legal. Recheck the board.');return;}physicalMoveLog.push({label:played.san,fen:game.fen(),previousFen:old,illegal:false});showMoves();drawPos(null);const previous=labReference?.photo;labAcceptPhoto(photo,fp);if(previous)labDraw('labPrevious',previous);labRenderObs(labObs(photo));labUI('Recorded '+played.san+' · waiting for next move.');msg('Photo move: '+played.san);sayMove(played);if(game.game_over())labUI('Game finished. Export PGN.');}
+function labAcceptPhoto(photo,fp,direct=null){labFallbackKey='';labFallbackSince=0;labVerify=null;labReference={photo,fp,direct};labLastObservation=null;labObservationSince=0;labFen=game.fen();labLastFrame=fp;labStableAt=0;labMotion=false;labPending=null;$('labCandidates').replaceChildren();labDraw('labPrevious',photo);}
+function labCommit(m,photo,fp,direct=null,route='Original Camera Lab',observed=null){const old=game.fen(),played=game.move({from:m.from,to:m.to,promotion:m.promotion||'q'});if(!played){labUI('Move no longer legal. Recheck the board.');return;}physicalMoveLog.push({label:played.san,fen:game.fen(),previousFen:old,illegal:false});showMoves();drawPos(null);const previous=labReference?.photo;labAcceptPhoto(photo,fp,direct);if(previous)labDraw('labPrevious',previous);labRenderObs(observed||labObs(photo));labRoute(route);labUI('Recorded '+played.san+' · '+route+' · waiting for next move.');msg('Photo move: '+played.san);sayMove(played);if(game.game_over())labUI('Game finished. Export PGN.');}
 function labAnalyze(forceBaseline=false,manual=false){
  if(mode!=='rec'||!game||!stream){labUI('Finish board calibration and starting-position verification first.');return;}
  const p=labPhoto(640,true);if(!p){labUI('Cannot refine photo; check all four locked corners.');return;}
- st(2,'64 squares ✓','ok');const fp=labFingerprint(p,640),obs=labObs(p);if(labReference)labDraw('labPrevious',labReference.photo);labLastPhoto=p;labDraw('labCurrent',p);labRenderObs(obs);
- const cur=Logic.occFromChess(game),none=Logic.dist(cur,obs.occ);
- const observation=Array.from(obs.occ).join(''),now=performance.now();
+ st(2,'64 squares ✓','ok');const fp=labFingerprint(p,640),algorithm=labAlgorithm(),direct=algorithm==='original'?null:labObs(p,'whole');let obs=algorithm==='direct'?direct:algorithm==='hybrid'&&labReference&&!forceBaseline?direct:labObs(p);if(labReference)labDraw('labPrevious',labReference.photo);labLastPhoto=p;labDraw('labCurrent',p);labRenderObs(obs);
+ const cur=Logic.occFromChess(game);let none=Logic.dist(cur,obs.occ);
+ let observation=algorithm+':'+Array.from(obs.occ).join(''),now=performance.now();
  if(!manual&&observation!==labLastObservation){labLastObservation=observation;labObservationSince=now;labVerify=null;labPending=null;$('labCandidates').replaceChildren();labUI('Board change detected · waiting for a stable photo.');return;}
  if(!manual&&now-labObservationSince<Math.max(300,Number($('labDelay').value)||500))return;
  if(forceBaseline||!labReference||labFen!==game.fen()){
   if(none!==0&&!forceBaseline){st(3,none+' mismatches','bad');st(4,'waiting');labUI('Reference photo disagrees on '+none+' squares. Check orientation and position, adjust threshold or confirm the physical position manually.');return;}
   if(forceBaseline&&none!==0&&!confirm('The occupancy test disagrees on '+none+' squares. Is the physical position definitely correct?'))return;
-  labAcceptPhoto(p,fp);st(3,none===0?'position verified ✓':'confirmed by user','ok');st(4,'recording – play!','ok');prog(1);$('modelStatus').textContent='Photo occupancy: ready';msg('READY – play one move at a time.');readySnd();spk('Board ready. Start playing.');labUI('Reference photo captured. Play one move, then remove your hands.');return;
+  labAcceptPhoto(p,fp,direct);st(3,none===0?'position verified ✓':'confirmed by user','ok');st(4,'recording – play!','ok');prog(1);$('modelStatus').textContent='Photo occupancy: ready';msg('READY – play one move at a time.');readySnd();spk('Board ready. Start playing.');labUI('Reference photo captured. Play one move, then remove your hands.');return;
  }
  if(game.game_over())return;
+
+ // Direct compares the two photographs, without ranking every legal move.
+ if(algorithm!=='original'){
+  const previous=labDirectReference();
+  const delta=occupancyDelta(previous.occ,direct.occ);labShowDelta(delta);
+  const choices=labSimpleCandidates(delta),simple=choices.length===1&&!choices[0].promotion?choices[0]:null;
+  if(algorithm==='direct'){
+   labRoute('Direct photo occupancy');
+   if(simple){labCommit(simple,p,fp,direct,'Direct photo occupancy',direct);return;}
+   if(!delta.removed.length&&!delta.added.length){labUI('No occupancy changes. Waiting for a move.');return;}
+   if(choices.length&&choices.some(m=>m.promotion)){
+    labUI('Promotion detected. Select the actual promotion piece.');const dst=$('labCandidates');
+    if(labPending?.observation!==observation){dst.replaceChildren();labPending={fen:game.fen(),observation};for(const m of choices){const b=document.createElement('button');b.textContent=m.san;b.onclick=()=>{if(labPending?.fen===game.fen())labCommit(m,p,fp,direct,'Direct photo occupancy',direct);};dst.append(b);}}return;
+   }
+   labUI(delta.removed.length===1&&delta.added.length===1?'Detected '+delta.removed[0]+' → '+delta.added[0]+' but it is not a legal simple move. Check the position.':'Direct comparison cannot uniquely identify this move. Use Hybrid or Original, or enter the move manually.');return;
+  }
+  // Hybrid fast path: verify the direct result against the confirmed chess
+  // position as well as the predicted occupancy of the legal move.
+  if(simple&&Logic.dist(previous.occ,cur)===0&&Logic.dist(Logic.predicted(cur,simple),direct.occ)===0){
+   labCommit(simple,p,fp,direct,'Hybrid · direct + legal verification',direct);return;
+  }
+  // Complex moves and uncertain direct observations use the existing
+  // middle-rank classifier plus full legal-move ranking.
+  labRoute('Hybrid · original fallback');
+  obs=labObs(p);none=Logic.dist(cur,obs.occ);labRenderObs(obs);
+  const fallbackKey='hybrid:'+Array.from(direct.occ).join('')+':'+Array.from(obs.occ).join('');
+  if(!manual&&labFallbackKey!==fallbackKey){labFallbackKey=fallbackKey;labFallbackSince=now;return;}
+  if(!manual&&now-labFallbackSince<Math.max(300,Number($('labDelay').value)||500))return;
+  observation=fallbackKey;
+ }else{labRoute('Original Camera Lab');$('labChanges').style.display='none';}
+
  const ranked=Logic.rankMoves(game,obs.occ);if(!ranked.length)return;
  if(none===0){labVerify=null;labPending=null;$('labCandidates').replaceChildren();labUI('No occupancy change detected. Waiting for a move.');return;}
  const best=ranked[0],ties=ranked.filter(x=>x.d===best.d);
- if(best.d===0&&ties.length===1&&!best.m.promotion){labCommit(best.m,p,fp);return;}labVerify=null;
+ if(best.d===0&&ties.length===1&&!best.m.promotion){labCommit(best.m,p,fp,direct,algorithm==='hybrid'?'Hybrid · original fallback':'Original Camera Lab',obs);return;}labVerify=null;
  if(best.d>=none&&!manual){labPending=null;$('labCandidates').replaceChildren();labUI('Unclear photo; automatically checking again.');return;}
  if(!manual&&best.d>0&&now-labObservationSince<1600){labUI('Some squares disagree · automatically checking again.');return;}
  if(!manual&&labPending?.fen===game.fen()&&labPending.observation===observation)return;
  labPending={photo:p,fp,fen:game.fen(),observation};const dst=$('labCandidates');dst.replaceChildren();
  const options=ranked.filter(x=>x.d===best.d).slice(0,12);
- for(const x of options){const moves=x.m.promotion?game.moves({verbose:true}).filter(m=>m.from===x.m.from&&m.to===x.m.to):[x.m];for(const m of moves){const b=document.createElement('button');b.textContent=m.san+' ('+x.d+' mismatch)';b.onclick=()=>{if(labPending&&labPending.fen===game.fen())labCommit(m,p,fp)};dst.append(b);}}
+ for(const x of options){const moves=x.m.promotion?game.moves({verbose:true}).filter(m=>m.from===x.m.from&&m.to===x.m.to):[x.m];for(const m of moves){const b=document.createElement('button');b.textContent=m.san+' ('+x.d+' mismatch)';b.onclick=()=>{if(labPending&&labPending.fen===game.fen())labCommit(m,p,fp,direct,algorithm==='hybrid'?'Hybrid · original fallback':'Original Camera Lab',obs)};dst.append(b);}}
  const retry=document.createElement('button');retry.textContent='Rescan / reject';retry.onclick=()=>{labPending=null;dst.replaceChildren();labLastObservation=null;labObservationSince=0;labUI('Rescanning automatically.');};dst.append(retry);
  labUI('Ambiguous or noisy occupancy ('+best.d+' mismatches). Confirm the actual move, or rescan.');
 }
@@ -1441,10 +1496,16 @@ function labModeChanged(){
  if(mode==='rec'&&!labReference)msg(auto?'Waiting for automatic starting-position photo.':'Board locked. Tap Capture & Analyze now to capture the starting position.');
 }
 $('labAuto').onchange=labModeChanged;$('labManual').onchange=labModeChanged;
+$('labAlgorithm').onchange=()=>{
+ const a=labAlgorithm();labLastObservation=null;labObservationSince=0;labFallbackKey='';labFallbackSince=0;labLastCheck=0;labPending=null;$('labCandidates').replaceChildren();$('labChanges').style.display='none';
+ const label={original:'Original Camera Lab',direct:'Direct photo occupancy',hybrid:'Hybrid detection'}[a];
+ $('labAlgorithmHelp').textContent={original:'Existing legal-move occupancy analysis.',direct:'Compares occupied and empty squares in the last confirmed and latest photo. Simple moves only; complex moves need another method.',hybrid:'Fast direct comparison for simple moves, legal verification and original analysis for complex moves.'}[a];
+ labRoute(label);labUI(label+' selected. '+($('labAuto').checked?'Automatic scanning continues.':'Tap Capture & Analyze now.'));
+};
 $('labCapture').onclick=()=>{labPending=null;labAnalyze(false,true)};
 $('labBaseline').onclick=()=>labAnalyze(true,true);
 $('labDownload').onclick=()=>{if(!labLastPhoto){labUI('Capture a photo first.');return;}const a=document.createElement('a');a.href=$('labCurrent').toDataURL('image/jpeg',.92);a.download='zen-board-photo.jpg';a.click()};
-$('labThreshold').onchange=()=>{labPending=null;labLastObservation=null;labObservationSince=0;$('labCandidates').replaceChildren();if(!$('labAuto').checked)labUI('Threshold updated. Tap Capture & Analyze now to test.');};
+$('labThreshold').onchange=()=>{labFallbackKey='';labFallbackSince=0;labPending=null;labLastObservation=null;labObservationSince=0;$('labCandidates').replaceChildren();if(!$('labAuto').checked)labUI('Threshold updated. Tap Capture & Analyze now to test.');};
 
 $('recoverBtn').onclick=()=>labAnalyze(false,true);
 const loop=()=>{if(mode!=='rec'&&labMode==='rec'){labMode=mode;labReset();}const t=Date.now();if(stream&&V.videoWidth&&W.width){wc.drawImage(V,0,0,W.width,W.height);try{({search:searchStep,rec:labStep}[mode]||(()=>{}))()}catch(e){console.error(e)}}
