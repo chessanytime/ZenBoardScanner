@@ -3,8 +3,6 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Zen Board Scanner</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <style>
 :root{--bg:#10151a;--fg:#e9eef2;--card:#1a222a;--mut:#8fa0ad;--ok:#22c55e;--bad:#ef4444;--ac:#e8b04a}
 @media(prefers-color-scheme:light){:root{--bg:#f3efe6;--fg:#1c2329;--card:#fff;--mut:#5b6872}}
@@ -57,11 +55,6 @@ small{color:var(--mut)}
 <textarea id="illegalFenBox" readonly style="display:none" aria-label="Illegal move FEN positions"></textarea>
 <button id="exportIllegalFen" style="display:none">Export illegal-move FEN</button>
 
-<section id="liveControls" style="border:2px solid #e8b04a;border-radius:12px;padding:12px;margin:12px 0;background:var(--card)">
-<strong style="color:var(--ac);font-size:17px">● LIVE BROADCAST</strong>
-<div class="row"><button class="p" id="broadcastBtn" type="button">🔴 Start Live Broadcast</button><button id="stopBroadcastBtn" type="button" disabled>Stop Broadcast</button></div>
-<small id="broadcastStatus" role="status">Not broadcasting. Press Start Live Broadcast to publish to Firebase.</small>
-</section>
 <div class="row">
 <button class="p" id="b1">Start camera</button>
 <button id="b2">Auto-detect board</button>
@@ -192,7 +185,7 @@ const newGame=()=>{game=new Chess();physicalMoveLog=[];hasIllegalMoves=false;sho
 occ=g=>g.board().flat().map(x=>!!x),
 sq=s=>(8-parseInt(s[1]))*8+'abcdefgh'.indexOf(s[0]),
 U={p:'♟',n:'♞',b:'♝',r:'♜',q:'♛',k:'♚'};
-function showMoves(){const h=game?game.history():[];let o='';for(let i=0;i<h.length;i+=2)o+='<div>'+((i/2+1)|0)+'. '+h[i]+(h[i+1]?'&nbsp;&nbsp;'+h[i+1]:'')+'</div>';const M=$('moves');if(hasIllegalMoves)o=physicalMoveLog.map((x,i)=>'<div>'+(i%2===0?(Math.floor(i/2)+1)+'. ':'')+x.label+'</div>').join('');M.innerHTML=o||'Recorded moves will appear here';M.scrollTop=M.scrollHeight;if(typeof refreshIllegalExport==='function')refreshIllegalExport();if(typeof publishLive==='function')queueMicrotask(publishLive);
+function showMoves(){const h=game?game.history():[];let o='';for(let i=0;i<h.length;i+=2)o+='<div>'+((i/2+1)|0)+'. '+h[i]+(h[i+1]?'&nbsp;&nbsp;'+h[i+1]:'')+'</div>';const M=$('moves');if(hasIllegalMoves)o=physicalMoveLog.map((x,i)=>'<div>'+(i%2===0?(Math.floor(i/2)+1)+'. ':'')+x.label+'</div>').join('');M.innerHTML=o||'Recorded moves will appear here';M.scrollTop=M.scrollHeight;if(typeof refreshIllegalExport==='function')refreshIllegalExport();
 const l=$('last');l.textContent=physicalMoveLog.length?'Last: '+physicalMoveLog[physicalMoveLog.length-1].label:h.length?'Last: '+((h.length+1)>>1)+(h.length%2?'. ':'… ')+h[h.length-1]:'—'}
 const PN={p:'Pawn',n:'Knight',b:'Bishop',r:'Rook',q:'Queen',k:'King'},spk=t=>{if(!voice||!window.speechSynthesis)return;try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.rate=.95;speechSynthesis.speak(u)}catch(e){}},
 sayMove=x=>{const sqn=z=>z[0]+' '+z[1];let t;if(x.flags.includes('k'))t='Castles kingside';else if(x.flags.includes('q'))t='Castles queenside';
@@ -1194,52 +1187,6 @@ $('b15').onclick=e=>{showDiagnostics=!showDiagnostics;e.target.textContent='Yell
 $('b12').onclick=()=>{if(!game||(!game.history().length&&!physicalMoveLog.length)){msg('No moves recorded yet.');return}const p=getPGN(),b=$('pgnbox');b.value=p;b.style.display='block';
 try{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([p],{type:'application/x-chess-pgn'}));a.download='chess-game.pgn';document.body.appendChild(a);a.click();a.remove()}catch(e){}
 try{navigator.clipboard.writeText(p)}catch(e){}msg('PGN exported (also copied). If no file downloaded, copy it from the box above.')};
-
-/* Live broadcast: independent of camera and recognition. */
-const firebaseConfig={apiKey:"AIzaSyDTIQt1enwMHo4Cdp1cOFnoTCAsQqcfjrg",authDomain:"zen-mind-chess-academy.firebaseapp.com",databaseURL:"https://zen-mind-chess-academy-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"zen-mind-chess-academy",storageBucket:"zen-mind-chess-academy.firebasestorage.app",messagingSenderId:"376204040516",appId:"1:376204040516:web:7df8dacc3ea642e2c75f11",measurementId:"G-0RC5MRMTW3"};
-let liveDb=null,liveRef=null,liveSessionId=null,livePublishing=false;
-try{if(window.firebase){if(!firebase.apps.length)firebase.initializeApp(firebaseConfig);liveDb=firebase.database()}}
-catch(e){console.warn('Firebase init:',e)}
-function livePayload(){
- return {
-  white:($('whiteName').value||'White').trim().slice(0,100),
-  black:($('blackName').value||'Black').trim().slice(0,100),
-  fen:game?game.fen():'',
-  moves:(hasIllegalMoves?physicalMoveLog.map(x=>({san:x.label,illegal:!!x.illegal})):(game?game.history().map(x=>({san:x,illegal:false})):[])),
-  pgn:game?getPGN():'',
-  status:'live',
-  updatedAt:firebase.database.ServerValue.TIMESTAMP
- };
-}
-function publishLive(){
- if(!livePublishing||!liveRef)return;
- liveRef.update(livePayload()).catch(e=>{$('broadcastStatus').textContent='Broadcast error: '+e.message});
-}
-async function startLive(){
- if(!liveDb){$('broadcastStatus').textContent='Firebase SDK unavailable. Check connection.';return}
- if(livePublishing)return;
- try{
-  liveRef=liveDb.ref('liveChessGames').push();liveSessionId=liveRef.key;
-  await liveRef.set({...livePayload(),createdAt:firebase.database.ServerValue.TIMESTAMP});
-  await liveRef.onDisconnect().update({status:'offline',updatedAt:firebase.database.ServerValue.TIMESTAMP});
-  livePublishing=true;
-  $('broadcastBtn').disabled=true;$('stopBroadcastBtn').disabled=false;
-  $('broadcastStatus').textContent='LIVE • Game ID: '+liveSessionId+' • Open chess-live-viewer-v3.html to watch.';
- }catch(e){liveRef=null;$('broadcastStatus').textContent='Could not start broadcast: '+e.message}
-}
-async function stopLive(){
- if(!liveRef)return;
- livePublishing=false;
- try{await liveRef.update({...livePayload(),status:'ended',updatedAt:firebase.database.ServerValue.TIMESTAMP});await liveRef.onDisconnect().cancel()}
- catch(e){$('broadcastStatus').textContent='Stop failed: '+e.message}
- liveRef=null;$('broadcastBtn').disabled=false;$('stopBroadcastBtn').disabled=true;
- $('broadcastStatus').textContent='Broadcast ended.';
-}
-
-$('broadcastBtn').onclick=startLive;
-$('stopBroadcastBtn').onclick=stopLive;
-$('whiteName').addEventListener('input',publishLive);
-$('blackName').addEventListener('input',publishLive);
 
 const loop=()=>{const t=Date.now();if(stream&&V.videoWidth&&W.width){wc.drawImage(V,0,0,W.width,W.height);try{({search:searchStep,scan:scanStep,pieces:pieceStep,rec:recStep}[mode]||(()=>{}))()}catch(e){console.error(e)}}
 setTimeout(loop,Math.max(20,(mode=='rec'?65:250)-(Date.now()-t)))};loop();
