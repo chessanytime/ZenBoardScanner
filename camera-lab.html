@@ -25,9 +25,9 @@ details.panel{padding:0}details>summary{padding:15px 16px;cursor:pointer;list-st
 <div class="stack">
 <section class="panel camera-panel"><div class="panel-top"><h2>Board camera</h2><span class="tag">LIVE VIEW</span></div>
 <div id="stage"><video id="v" playsinline muted autoplay></video><canvas id="ov"></canvas></div>
-<div id="msg" role="status" aria-live="polite">Start camera with an empty board and all four corners visible.</div><div id="barw"><div id="bar"></div></div><small id="modelStatus">Occupancy model: waiting for calibrated starting position</small>
+<div id="msg" role="status" aria-live="polite">Arrange the 32 pieces, select camera orientation, and start camera with all four board corners visible.</div><div id="barw"><div id="bar"></div></div><small id="modelStatus">Photo occupancy: waiting for board lock</small>
 <div class="row"><label class="field">Board orientation<select id="viewSide" class="camera-select" aria-label="Camera board orientation"><option value="0">Camera: White side</option><option value="1">Camera: right side</option><option value="2">Camera: Black side</option><option value="3">Camera: left side</option></select></label></div><div class="primary-actions"><button class="p" id="b1">Start camera</button><button id="b2">Auto-detect board</button><button id="b3">Lock border</button></div></section>
-<section class="panel steps-panel"><h2>Setup progress</h2><ol class="steps"><li>Detect board border <b id="s1">waiting</b></li><li>Scan empty squares <b id="s2">waiting</b></li><li>Verify starting position <b id="s3">waiting</b></li><li>Record moves <b id="s4">waiting</b></li></ol></section>
+<section class="panel steps-panel"><h2>Setup progress</h2><ol class="steps"><li>Detect board border <b id="s1">waiting</b></li><li>Refine board photo <b id="s2">waiting</b></li><li>Verify starting position <b id="s3">waiting</b></li><li>Record moves <b id="s4">waiting</b></li></ol></section>
 <details class="panel setup-panel"><summary>Camera &amp; recording settings</summary><div class="detail-body"><div class="row"><label class="field">Camera device<select id="cameraSelect" class="camera-select" aria-label="Choose smartphone camera"><option value="">Camera: auto (rear)</option></select></label></div><div class="actions"><button id="b8">Switch camera</button><button id="flashBtn" disabled>Flash: unavailable</button><button id="b9">Sound: on</button><button id="b11">Announce moves: on</button></div><p class="help">Mount the camera above the board. Keep all corners visible. Drag the corner handles if detection is incorrect, then lock the border. Recalibrate after moving the camera.</p></div></details>
 <details class="panel diagnostics-panel"><summary>Detection diagnostics</summary><div class="detail-body"><div class="actions"><button id="b15">Yellow diagnostics: off</button><button id="cvToggle">OpenCV: loading…</button></div><div class="cv" style="margin-top:12px"><figure><figcaption>Detected position</figcaption><canvas class="sq" id="pos" width="240" height="240"></canvas></figure><figure><figcaption>Flattened board</figcaption><canvas class="sq" id="flat" width="320" height="320"></canvas></figure></div><p class="help">Red: expected piece missing. Orange: unexpected piece.</p></div></details>
 </div>
@@ -35,7 +35,7 @@ details.panel{padding:0}details>summary{padding:15px 16px;cursor:pointer;list-st
 <section class="panel record-panel"><div class="panel-top"><h2>Photo occupancy detection</h2><span class="tag">NO ONNX</span></div>
 <div class="row"><label class="field">Occupancy threshold <input id="labThreshold" type="number" min="0.1" max="2" step="0.05" value="0.5"></label><label class="field">Stable delay (ms) <input id="labDelay" type="number" min="300" max="2000" step="100" value="500"></label></div>
 <div class="row"><label><input id="labAuto" type="checkbox" checked style="min-height:0"> Automatic capture</label></div><div class="actions"><button id="labCapture" class="p">Capture &amp; analyze</button><button id="labBaseline">Confirm starting / current photo</button></div>
-<p id="labStatus" role="status" class="help">Calibrate the empty board, then arrange the 32 pieces. The first stable photo becomes the reference.</p><div class="cv"><figure><figcaption>Previous confirmed photo</figcaption><canvas id="labPrevious" class="sq" width="640" height="640"></canvas></figure><figure><figcaption>Latest refined photo</figcaption><canvas id="labCurrent" class="sq" width="640" height="640"></canvas></figure></div>
+<p id="labStatus" role="status" class="help">Start with all 32 pieces already in their standard positions. The first verified photo becomes the reference.</p><div class="cv"><figure><figcaption>Previous confirmed photo</figcaption><canvas id="labPrevious" class="sq" width="640" height="640"></canvas></figure><figure><figcaption>Latest refined photo</figcaption><canvas id="labCurrent" class="sq" width="640" height="640"></canvas></figure></div>
 <div class="row"><button id="labDownload">Download latest photo</button></div><div id="labGrid" style="display:grid;grid-template-columns:repeat(8,1fr);gap:2px;margin:12px 0"></div><div id="labCandidates" class="actions"></div><p class="help">Green squares = occupied; dark squares = empty; red border = mismatch against the confirmed position. If occupancy cannot uniquely identify a move, choose the actual legal move below.</p><hr style="border:0;border-top:1px solid var(--line);margin:16px 0"><div class="panel-top"><h2>Recorded game</h2><span class="tag">PGN</span></div><div class="move-label">Last move</div><div id="last">—</div><div id="moves">Recorded moves will appear here</div><div class="actions"><input id="manualMove" placeholder="Enter move: e4, Nf3, e2e4" aria-label="Manual chess move"><button id="addManualMove">Add move</button><button id="deleteLastMove">Undo move</button><button id="b5">Resync board</button><button id="recoverBtn">Recover missed move</button><button id="redoRecording" class="p">Restart recording</button></div><button id="b12" class="p">Export PGN file</button><textarea id="pgnbox" readonly></textarea><textarea id="illegalFenBox" readonly style="display:none" aria-label="Illegal move FEN positions"></textarea><button id="exportIllegalFen" style="display:none">Export illegal-move FEN</button><p class="help">Enter SAN or coordinate moves. Coordinate notation also supports recording physically played illegal moves.</p></section>
 <details class="panel player-panel"><summary>Player details (optional)</summary><div class="detail-body"><div class="row"><label class="field">White player<input id="whiteName" placeholder="Name"></label><label class="field">Black player<input id="blackName" placeholder="Name"></label></div></div></details>
 </div></main>
@@ -163,7 +163,7 @@ for(let q=0;q<64;q++){for(let k=0;k<48;k++)A[q*K+k]=Math.min(255,F[q*K+k]*g);A[q
 function startSearch(m){mode=m||'search';found=0;lastQ=null;t0=Date.now();st(1,m=='manual'?'drag corners, then Lock':'searching…');st(2,'waiting');st(3,'waiting');st(4,'waiting');prog(0);
 msg(m=='manual'?'Drag the 4 white dots onto the board corners, then tap “Lock border now”.':'Searching for the board… hold steady, all 4 corners in view. You can also drag the dots yourself.')}
 function extOut(){const H=hom([[0,0],[8,0],[8,8],[0,8]],rq());return[[-1,-1],[9,-1],[9,9],[-1,9]].some(p=>{const[x,y]=ap(H,p[0],p[1]);return x<0||y<0||x>O.width||y>O.height})}
-function lock(a){occModelReady=false;occModel=null;mode='scan';n=0;acc=null;colorChk=0;st(1,'locked ✓','ok');st(2,'scanning…');prog(0);msg('Border locked. Keep the board EMPTY – scanning squares…'+(extOut()?'  ⚠ The blue dashed capture area goes outside the picture – move the camera back a little so it fits.':''));a?foundSnd():beep(660,.12,.45)}
+function lock(a){if(!quad||!stream)return;mode='rec';if(!game)newGame();resetTracking();st(1,'locked ✓','ok');st(2,'refining photo…');st(3,'verifying position…');st(4,'waiting');prog(.4);$('modelStatus').textContent='Photo occupancy: checking the starting position';msg('Border locked. Keep all pieces in the correct position and hands away while the first photo is verified.');a?foundSnd():beep(660,.12,.45);}
 function detectByContours(){
  if(!(window.cv&&cv.Mat&&cv.findContours))return null;
  let src,gray,blur,edges,contours,hierarchy;
@@ -186,20 +186,9 @@ function detectByContours(){
     p.sort((a,b)=>Math.atan2(a[1]-cy,a[0]-cx)-Math.atan2(b[1]-cy,b[0]-cx));
     let tl=0;for(let j=1;j<4;j++)if(p[j][0]+p[j][1]<p[tl][0]+p[tl][1])tl=j;
     const ordered=Array.from({length:4},(_,j)=>p[(tl+j)%4]);
-    // Verify that the proposed quadrilateral actually contains a checkerboard.
-    const H=hom([[0,0],[8,0],[8,8],[0,8]],ordered);
-    let lights=[],darks=[],valid=true;
-    const pixels=wc.getImageData(0,0,W.width,W.height).data;
-    for(let y=0;y<8;y++)for(let x=0;x<8;x++){
-     const [px,py]=ap(H,x+.5,y+.5),xx=Math.round(px),yy=Math.round(py);
-     if(xx<0||yy<0||xx>=W.width||yy>=W.height){valid=false;break}
-     const k=(yy*W.width+xx)*4,v=.299*pixels[k]+.587*pixels[k+1]+.114*pixels[k+2];
-     ((x+y)%2?darks:lights).push(v);
-    }
-    if(valid&&lights.length===32&&darks.length===32){
-     const contrast=Math.abs(lights.reduce((a,b)=>a+b,0)/32-darks.reduce((a,b)=>a+b,0)/32);
-     if(contrast>12&&area>bestArea){bestArea=area;winner=ordered.map(p=>[p[0]/sc,p[1]/sc])}
-    }
+    // Verify the visible centre ranks, not the ranks occupied by pieces.
+    const candidate=ordered.map(p=>[p[0]/sc,p[1]/sc]);
+    if(area>bestArea&&validBoardSquares(candidate)){bestArea=area;winner=candidate;}
    }
    poly.delete();c.delete();
   }
@@ -212,32 +201,28 @@ function detectByContours(){
 function validBoardSquares(c){
  try{
   if(!c||c.length!==4)return false;
-  const H=hom([[0,0],[8,0],[8,8],[0,8]],c.map(p=>[p[0]*sc,p[1]*sc]));
+  const ordered=[0,1,2,3].map(i=>c[(i+rot)%4]);
+  const H=hom([[0,0],[8,0],[8,8],[0,8]],ordered.map(p=>[p[0]*sc,p[1]*sc]));
   const w=W.width,h=W.height,pixels=wc.getImageData(0,0,w,h).data;
-  const values=[];
-  for(let r=0;r<8;r++)for(let f=0;f<8;f++){
+  const values=[],even=[],odd=[];
+  // In the standard start position the middle four ranks are empty; the
+  // outer two ranks on each side contain pieces and must not be tested.
+  for(let r=2;r<=5;r++)for(let f=0;f<8;f++){
    const samples=[];
    for(const [dx,dy] of [[0,0],[-.16,0],[.16,0],[0,-.16],[0,.16]]){
     const [x,y]=ap(H,f+.5+dx,r+.5+dy),ix=Math.round(x),iy=Math.round(y);
     if(!Number.isFinite(x)||!Number.isFinite(y)||ix<0||iy<0||ix>=w||iy>=h)return false;
     const k=(iy*w+ix)*4;samples.push(.299*pixels[k]+.587*pixels[k+1]+.114*pixels[k+2]);
    }
-   samples.sort((a,b)=>a-b);values.push(samples[2]);
+   samples.sort((a,b)=>a-b);const v=samples[2],parity=(r+f)&1;
+   values.push([v,parity]);(parity?odd:even).push(v);
   }
-  const med=a=>{const b=a.slice().sort((x,y)=>x-y);return(b[15]+b[16])/2};
-  const even=[],odd=[];
-  for(let r=0;r<8;r++)for(let f=0;f<8;f++)(((r+f)&1)?odd:even).push(values[r*8+f]);
-  const contrast=Math.abs(med(even)-med(odd));
-  if(contrast<11)return false;
-  const direction=Math.sign(med(even)-med(odd));
-  let consistent=0;
-  const middle=(med(even)+med(odd))/2;
-  for(let r=0;r<8;r++)for(let f=0;f<8;f++){
-   const expected=((r+f)&1)?-direction:direction;
-   if((values[r*8+f]-middle)*expected>2)consistent++;
-  }
-  return consistent>=49; // allow some shadows and square-color variation
- }catch(e){return false}
+  const med=a=>{const b=a.slice().sort((x,y)=>x-y);return(b[7]+b[8])/2;};
+  const e=med(even),o=med(odd);
+  if(Math.abs(e-o)<11)return false;
+  const middle=(e+o)/2,direction=Math.sign(e-o);
+  return values.filter(([v,p])=>(v-middle)*(p?-direction:direction)>2).length>=27;
+ }catch(e){return false;}
 }
 let searchAttempt=0;
 function searchStep(){
@@ -255,7 +240,7 @@ function searchStep(){
   st(1,'checking 64 squares…');
  }else{found=0;lastQ=null;prog(0)}
  if(searchAttempt%4===0&&!c)st(1,'searching ('+searchAttempt+' frames)…');
- if(Date.now()-t0>7000)msg('Board not verified automatically. Show the full empty checkerboard, or drag the 8 border dots and press Lock border now.');
+ if(Date.now()-t0>7000)msg('Board not verified automatically. Keep the full board visible with pieces arranged, or drag the corner handles and press Lock border.');
 }
 function scanStep(){const F=warp();acc=acc||new Float32Array(F.length);for(let i=0;i<F.length;i++)acc[i]+=F[i];n++;prog(n/6);st(2,'squares '+Math.min(64,Math.round(n*64/6))+'/64');tick(n/6);
 if(n<6)return;base=acc.map(v=>v/6);const L=[];let m=0;for(let q=0;q<64;q++){L[q]=lum(base,q);m+=L[q]/64}let c=0;for(let q=0;q<64;q++){const r=q>>3,f=q&7;c+=Math.sign(L[q]-m)*(((f+r)&1)?-1:1)}
@@ -1065,7 +1050,7 @@ async function cam(){cancelPromotion();if(cameraBusy)return;cameraBusy=true;cons
  const side=Math.min(w,h)*.8,cx=w/2,cy=h/2;
  quad=[[cx-side/2,cy-side/2],[cx+side/2,cy-side/2],[cx+side/2,cy+side/2],[cx-side/2,cy+side/2]];
  // Camera changes invalidate image calibration, but preserve already recorded moves.
- base=null;occModel=null;occModelReady=false;$('modelStatus').textContent='Occupancy model: waiting for calibration';refF=null;prevF=null;thrQ=null;stable=0;rot=0;startSearch();
+ base=null;occModel=null;occModelReady=false;$('modelStatus').textContent='Photo occupancy: waiting for board lock';refF=null;prevF=null;thrQ=null;stable=0;rot=Number($('viewSide').value)||0;startSearch();
  await listCameras();updateFlash();
  }catch(e){flashBtn.disabled=true;flashBtn.textContent='Flash: unavailable';msg('Camera error: '+e.message+'. Use HTTPS or localhost and allow camera permission.')}
  finally{cameraBusy=false}
@@ -1121,23 +1106,9 @@ $('whiteName').addEventListener('input',()=>{});$('blackName').addEventListener(
 $('b1').onclick=cam;
 $('b2').onclick=()=>{if(stream)startSearch()};
 $('b3').onclick=()=>{if(stream&&(mode=='search'||mode=='manual'))lock(false)};
-$('viewSide').onchange=e=>{rot=Number(e.target.value);if(stream&&quad){mode='scan';n=0;acc=null;refF=null;prevF=null;msg('Camera side selected. Clear the board temporarily to recalibrate empty squares.');}};
-$('b5').onclick=()=>{if(mode=='pieces'){forceStart=1;pst=Math.max(pst,4);msg('Starting with the current view…');return}refF=null;prevF=null;stable=0;unclear=0;resetTracking();msg('Resynced – make sure the real board matches the on-screen position, then make your next move.')};
-$('redoRecording').onclick=()=>{
- if(!stream||!base||!quad||!['pieces','rec'].includes(mode)){
-  msg('First finish empty-board calibration and lock the board. Re Do Recording keeps that calibration.');return;
- }
- // Preserve the calibrated empty squares, locked corners and camera selection.
- // Discard the old game and re-verify the physical standard starting position.
- newGame();$('pgnbox').value='';$('pgnbox').style.display='none';
- mode='pieces';ready=0;colorChk=1;pst=0;prevF=null;refF=null;resetTracking();
- thrQ=null;forceStart=0;stable=0;unclear=0;lastOk=0;Nz=1.5;
- st(1,'locked ✓','ok');st(2,'64/64 ✓','ok');
- st(3,'checking starting position…');st(4,'waiting');prog(0);
- drawPos(null,true);
- msg('Recording cleared. Restore all 32 pieces to the standard starting position, remove your hands and wait for READY. Empty-board calibration and camera settings are preserved.');
- beep(550,.12,.4);beep(660,.15,.4,'sine',.16);
-};
+$('viewSide').onchange=e=>{rot=Number(e.target.value);if(stream&&quad&&mode==='rec'){resetTracking();st(3,'verifying position…');st(4,'waiting');msg('Orientation updated. Keep the physical board in the recorded position while we verify the new photo.');}};
+$('b5').onclick=()=>{if(mode!=='rec'){msg('Lock the board first.');return;}resetTracking();st(3,'verifying position…');st(4,'waiting');msg('Resynced – match the physical board to the recorded position and wait for the reference photo.');};
+$('redoRecording').onclick=()=>{if(!stream||!quad||mode!=='rec'){msg('Lock the board first.');return;}newGame();$('pgnbox').value='';$('pgnbox').style.display='none';resetTracking();st(1,'locked ✓','ok');st(2,'refining photo…');st(3,'verifying starting position…');st(4,'waiting');prog(.4);drawPos(null,true);msg('Recording reset. Restore all 32 pieces to the starting position. No empty-board scan needed.');};
 $('b8').onclick=()=>{if(cameraDevices.length>1){const active=stream?.getVideoTracks()[0]?.getSettings()?.deviceId;const idx=cameraDevices.findIndex(d=>d.deviceId===(selectedCamera||active));selectedCamera=cameraDevices[(idx+1+cameraDevices.length)%cameraDevices.length].deviceId}else{selectedCamera='';facing=facing==='environment'?'user':'environment'}if(stream)cam()};
 $('b9').onclick=e=>{snd=!snd;e.target.textContent='Sound: '+(snd?'on':'off')};
 $('b11').onclick=e=>{voice=!voice;e.target.textContent='Announce moves: '+(voice?'on':'off');if(voice)spk('Announcing moves on')};
@@ -1425,15 +1396,15 @@ function labCommit(m,photo,fp){const old=game.fen(),played=game.move({from:m.fro
 function labAnalyze(forceBaseline=false,manual=false){
  if(mode!=='rec'||!game||!stream){labUI('Finish board calibration and starting-position verification first.');return;}
  const p=labPhoto(640,true);if(!p){labUI('Cannot refine photo; check all four locked corners.');return;}
- const fp=labFingerprint(p,640),obs=labObs(p);if(labReference)labDraw('labPrevious',labReference.photo);labLastPhoto=p;labDraw('labCurrent',p);labRenderObs(obs);
+ st(2,'64 squares ✓','ok');const fp=labFingerprint(p,640),obs=labObs(p);if(labReference)labDraw('labPrevious',labReference.photo);labLastPhoto=p;labDraw('labCurrent',p);labRenderObs(obs);
  const cur=Logic.occFromChess(game),none=Logic.dist(cur,obs.occ);
  const observation=Array.from(obs.occ).join(''),now=performance.now();
  if(!manual&&observation!==labLastObservation){labLastObservation=observation;labObservationSince=now;labVerify=null;labPending=null;$('labCandidates').replaceChildren();labUI('Board change detected · waiting for a stable photo.');return;}
  if(!manual&&now-labObservationSince<Math.max(300,Number($('labDelay').value)||500))return;
  if(forceBaseline||!labReference||labFen!==game.fen()){
-  if(none!==0&&!forceBaseline){labUI('Reference photo disagrees on '+none+' squares. Adjust threshold or confirm the physical position manually.');return;}
+  if(none!==0&&!forceBaseline){st(3,none+' mismatches','bad');st(4,'waiting');labUI('Reference photo disagrees on '+none+' squares. Check orientation and position, adjust threshold or confirm the physical position manually.');return;}
   if(forceBaseline&&none!==0&&!confirm('The occupancy test disagrees on '+none+' squares. Is the physical position definitely correct?'))return;
-  labAcceptPhoto(p,fp);labUI('Reference photo captured. Play one move, then remove your hands.');return;
+  labAcceptPhoto(p,fp);st(3,none===0?'position verified ✓':'confirmed by user','ok');st(4,'recording – play!','ok');prog(1);$('modelStatus').textContent='Photo occupancy: ready';msg('READY – play one move at a time.');readySnd();spk('Board ready. Start playing.');labUI('Reference photo captured. Play one move, then remove your hands.');return;
  }
  if(game.game_over())return;
  const ranked=Logic.rankMoves(game,obs.occ);if(!ranked.length)return;
@@ -1468,7 +1439,7 @@ $('labDownload').onclick=()=>{if(!labLastPhoto){labUI('Capture a photo first.');
 $('labThreshold').onchange=()=>{if(mode==='rec'){labPending=null;$('labCandidates').replaceChildren();labAnalyze(false,true);}};
 
 $('recoverBtn').onclick=()=>labAnalyze(false,true);
-const loop=()=>{if(mode!=='rec'&&labMode==='rec'){labMode=mode;labReset();}const t=Date.now();if(stream&&V.videoWidth&&W.width){wc.drawImage(V,0,0,W.width,W.height);try{({search:searchStep,scan:scanStep,pieces:pieceStep,rec:labStep}[mode]||(()=>{}))()}catch(e){console.error(e)}}
+const loop=()=>{if(mode!=='rec'&&labMode==='rec'){labMode=mode;labReset();}const t=Date.now();if(stream&&V.videoWidth&&W.width){wc.drawImage(V,0,0,W.width,W.height);try{({search:searchStep,rec:labStep}[mode]||(()=>{}))()}catch(e){console.error(e)}}
 setTimeout(loop,Math.max(20,(mode=='rec'?65:250)-(Date.now()-t)))};loop();
 requestAnimationFrame(draw);
 </script></body></html>
