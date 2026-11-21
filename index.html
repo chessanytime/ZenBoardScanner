@@ -37,7 +37,8 @@ small{color:var(--mut)}
 #promotionChoices button{min-width:0;font-size:18px;padding:16px 8px}
 #pgnbox{display:none;width:100%;height:90px;margin-top:6px;background:var(--card);color:var(--fg);border:1px solid #8fa0ad55;border-radius:8px;padding:6px;font:12px monospace}
 </style></head><body>
-<h1>Chess Move Scanner v47</h1>
+<h1>Chess Move Scanner v48</h1>
+<label for="decisionMode"><strong>Move decision method:</strong> <select class="camera-select" id="decisionMode"><option value="zen" selected>1. Zen Scanner</option><option value="photo">2. Photo occupancy move detection</option><option value="combined">3. Combined logic (awaiting decision rules)</option></select></label><p><small id="decisionStatus">Zen Scanner decides moves independently.</small></p>
 <label for="calibrationMode"><strong>Empty-board calibration:</strong> <select id="calibrationMode" class="camera-select"><option value="full" selected>Yes — calibrate empty board (recommended)</option><option value="skip">No — start with pieces already set up</option></select></label><p><small>Choose before locking the border. Skipping estimates empty squares from the four empty middle ranks of the standard starting position.</small></p>
 <div id="stage"><video id="v" playsinline muted autoplay></video><canvas id="ov"></canvas></div>
 <div id="msg">Choose calibration mode, then tap “Start camera”. Show all four corners; use manual border locking if pieces obscure the checkerboard.</div>
@@ -96,7 +97,7 @@ small{color:var(--mut)}
 <small>Red thick border = searching. Green thick border = board found. If the border is off, drag the white dots onto the board corners and press “Lock border now”. Position the phone above the centre of the board, looking down as vertically as possible. It may be mounted from White, Black, left or right: choose the camera side above. Ensure all squares and pieces remain visible. Changing camera position requires recalibration.</small>
 <div class="cv" style="margin-top:10px">
 <figure><figcaption>Detected position (red = piece expected but not seen, orange = unexpected piece)</figcaption><canvas class="sq" id="pos" width="240" height="240"></canvas></figure>
-<figure><figcaption>Flattened view (all 64 squares; 28×28 pixel sampling per square)</figcaption><canvas class="sq" id="flat" width="320" height="320"></canvas></figure>
+<figure><figcaption>Flattened view (all 64 squares; 28×28 pixel sampling per square)</figcaption><canvas class="sq" id="flat" width="320" height="320"></canvas></figure><figure id="photoPanel" hidden><figcaption>Photo detector — original 640 × 640 board image</figcaption><canvas class="sq" id="photo640" width="640" height="640"></canvas><button id="savePhoto640" type="button">Download board JPG</button></figure>
 </div>
 <div id="promotionPrompt" role="dialog" aria-modal="true" aria-labelledby="promotionTitle">
 <div id="promotionPanel"><h2 id="promotionTitle">Pawn promotion</h2>
@@ -688,7 +689,7 @@ function averageSettled(F){
  settledCount++;
  return Float32Array.from(settledAccum,v=>v/settledCount);
 }
-function resetTracking(){lastGoodSnapshot=null;cancelPromotion();uncertaintySince=0;pendingVerification=null;acceptedFlatPixels=null;acceptedFeatures=null;prevF=null;quietCount=0;proposal='';proposalCount=0;recNoise=2;baselineCount=0;baselineAccum=null;motionAt=0;freezeSince=0;clearSettled();}
+function resetTracking(){resetPhotoDetector();lastGoodSnapshot=null;cancelPromotion();uncertaintySince=0;pendingVerification=null;acceptedFlatPixels=null;acceptedFeatures=null;prevF=null;quietCount=0;proposal='';proposalCount=0;recNoise=2;baselineCount=0;baselineAccum=null;motionAt=0;freezeSince=0;clearSettled();}
 
 /* Compare full square photographs (not just average square colors).
    Per-square illumination normalization discounts uniform brightness changes.
@@ -883,6 +884,83 @@ function stableBoardPhotos(a,b){
  return medianDrift<3.8&&active<=3;
 }
 let uncertaintySince=0;
+
+/* Independent photo occupancy detector. It returns a legal move candidate,
+   never maintains a second game or creates a second PGN. */
+function photoSolve(A,b){for(let i=0;i<8;i++){let m=i;for(let j=i+1;j<8;j++)if(Math.abs(A[j][i])>Math.abs(A[m][i]))m=j;if(Math.abs(A[m][i])<1e-10)return null;[A[i],A[m]]=[A[m],A[i]];[b[i],b[m]]=[b[m],b[i]];const z=A[i][i];for(let k=i;k<8;k++)A[i][k]/=z;b[i]/=z;for(let j=0;j<8;j++){if(j===i)continue;const f=A[j][i];for(let k=i;k<8;k++)A[j][k]-=f*A[i][k];b[j]-=f*b[i]}}return b}
+
+  function histMedian(h) {
+    let total = 0; for (let i = 0; i < 256; i++) total += h[i];
+    let acc = 0; for (let i = 0; i < 256; i++) { acc += h[i]; if (acc * 2 >= total) return i; }
+    return 128;
+  }
+  function classicalGrid(rgba, size = 640, threshold = 0.5, reference = null) {
+    const s = size / 8, m = Math.floor(s * 0.18);
+    const box = (r, c) => [Math.floor(c * s + m), Math.floor((c + 1) * s - m), Math.floor(r * s + m), Math.floor((r + 1) * s - m)];
+    // empty-square colour per parity, estimated from the four middle ranks
+    const hist = [0, 1].map(() => [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)]);
+    for (let r = 2; r <= 5; r++) for (let c = 0; c < 8; c++) {
+      const [x0, x1, y0, y1] = box(r, c), p = (r + c) & 1;
+      for (let y = y0; y < y1; y += 2) for (let x = x0; x < x1; x += 2) {
+        const i = (y * size + x) * 4;
+        hist[p][0][rgba[i]]++; hist[p][1][rgba[i + 1]]++; hist[p][2][rgba[i + 2]]++;
+      }
+    }
+    const ref = reference || hist.map(h => h.map(histMedian));
+    const grid = new Uint8Array(64), scores = new Float32Array(64);
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+      const [x0, x1, y0, y1] = box(r, c), w = x1 - x0, h = y1 - y0, R = ref[(r + c) & 1];
+      const g = new Float32Array(w * h);
+      let far = 0;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const i = ((y0 + y) * size + (x0 + x)) * 4;
+        const dr = rgba[i] - R[0], dg = rgba[i + 1] - R[1], db = rgba[i + 2] - R[2];
+        if (Math.sqrt(dr * dr + dg * dg + db * db) > 45) far++;
+        g[y * w + x] = (rgba[i] + rgba[i + 1] + rgba[i + 2]) / 3;
+      }
+      let ex = 0, ey = 0;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w - 1; x++) ex += Math.abs(g[y * w + x + 1] - g[y * w + x]);
+      for (let y = 0; y < h - 1; y++) for (let x = 0; x < w; x++) ey += Math.abs(g[(y + 1) * w + x] - g[y * w + x]);
+      const score = far / (w * h) + 0.04 * (ex / (h * (w - 1)) + ey / ((h - 1) * w));
+      scores[r * 8 + c] = score;
+      grid[r * 8 + c] = score > threshold ? 1 : 0;
+    }
+    return { grid, scores };
+  }
+
+
+const photoSource=document.createElement('canvas'), photoSrcCtx=photoSource.getContext('2d',{willReadFrequently:true});
+const photoCanvas=$('photo640'), photoCtx=photoCanvas.getContext('2d',{willReadFrequently:true});
+let photoLast=null,photoReference=null,photoBaseline=null,photoFen=null,photoAt=0,photoQuiet=0,photoCandidate=null;
+function resetPhotoDetector(){photoLast=null;photoReference=null;photoBaseline=null;photoFen=null;photoAt=0;photoQuiet=0;photoCandidate=null;}
+function capturePhoto640(){if(!stream||V.readyState<2||!quad)return null;const w=V.videoWidth,h=V.videoHeight;if(!w||!h)return null;
+ const corners=rq(),src=[[0,0],[1,0],[1,1],[0,1]],A=[],b=[];
+ for(let i=0;i<4;i++){const [u,t]=src[i],[x,y]=corners[i];A.push([u,t,1,0,0,0,-u*x,-t*x]);b.push(x);A.push([0,0,0,u,t,1,-u*y,-t*y]);b.push(y);}
+ const H=photoSolve(A,b);if(!H)return null;
+ if(photoSource.width!==w||photoSource.height!==h){photoSource.width=w;photoSource.height=h;}photoSrcCtx.drawImage(V,0,0,w,h);
+ const pixels=photoSrcCtx.getImageData(0,0,w,h).data,out=photoCtx.createImageData(640,640),d=out.data;
+ for(let y=0;y<640;y++)for(let x=0;x<640;x++){const u=(x+.5)/640,t=(y+.5)/640,z=H[6]*u+H[7]*t+1,sx=Math.round((H[0]*u+H[1]*t+H[2])/z),sy=Math.round((H[3]*u+H[4]*t+H[5])/z),i=(y*640+x)*4;if(sx>=0&&sx<w&&sy>=0&&sy<h){const j=(sy*w+sx)*4;d[i]=pixels[j];d[i+1]=pixels[j+1];d[i+2]=pixels[j+2];}d[i+3]=255;}
+ photoCtx.putImageData(out,0,0);return d;
+}
+function photoReferenceFromFen(pixels,fen){const g=new Chess(fen),occupied=occ(g),hist=[0,1].map(()=>[new Uint32Array(256),new Uint32Array(256),new Uint32Array(256)]);let counts=[0,0];for(let q=0;q<64;q++){if(occupied[q])continue;const r=q>>3,c=q%8,p=(r+c)&1;counts[p]++;for(let y=r*80+14;y<(r+1)*80-14;y+=2)for(let x=c*80+14;x<(c+1)*80-14;x+=2){const i=(y*640+x)*4;for(let k=0;k<3;k++)hist[p][k][pixels[i+k]]++;}}return counts.every(Boolean)?hist.map(h=>h.map(histMedian)):null;}
+function photoChanges(a,b){const d=new Float32Array(64);if(!a||!b)return d;for(let q=0;q<64;q++){const r=q>>3,c=q%8;let sum=0,n=0;for(let y=r*80+14;y<(r+1)*80-14;y+=5)for(let x=c*80+14;x<(c+1)*80-14;x+=5){const i=(y*640+x)*4;sum+=Math.abs(a[i]-b[i])+Math.abs(a[i+1]-b[i+1])+Math.abs(a[i+2]-b[i+2]);n+=3;}d[q]=sum/n;}return d;}
+function rankPhotoMoves(fen,grid,changes){const g=new Chess(fen),cur=occ(g),distance=a=>a.reduce((n,v,q)=>n+(!!v!==!!grid[q]),0),none=distance(cur),rows=[];for(const m of g.moves({verbose:true})){if(m.promotion&&m.promotion!=='q')continue;const next=new Chess(fen);next.move({from:m.from,to:m.to,promotion:m.promotion||'q'});const from=sq(m.from),to=sq(m.to);rows.push({m,d:distance(occ(next)),visual:Math.min(changes[from],changes[to])});}rows.sort((a,b)=>a.d-b.d||b.visual-a.visual);return {none,rows};}
+function photoStep(){if(!game||promotionPending||game.game_over())return;const now=performance.now();if(now-photoAt<350)return;photoAt=now;
+ const pixels=capturePhoto640();if(!pixels)return;const motion=photoChanges(photoLast,pixels);photoLast=pixels;const moving=motion.some(v=>v>5);if(moving){photoQuiet=0;photoCandidate=null;return;}
+ if(++photoQuiet<3)return;const fen=game.fen();
+ if(!photoBaseline||photoFen!==fen){photoBaseline=pixels;photoFen=fen;photoReference=photoReferenceFromFen(pixels,fen);photoCandidate=null;$('decisionStatus').textContent='Photo detector calibrated to current confirmed FEN. Play a move.';return;}
+ const changes=photoChanges(photoBaseline,pixels),localNoise=median(Array.from(changes)),cut=Math.max(5,localNoise*2.5);if(changes.filter(v=>v>cut).length<2)return;
+ if(changes.filter(v=>v>cut).length>15){$('decisionStatus').textContent='Photo detector: broad change; waiting for clear board.';return;}
+ const {grid}=classicalGrid(pixels,640,.5,photoReference),{none,rows}=rankPhotoMoves(fen,grid,changes),best=rows[0],runner=rows[1];
+ if(!best||best.d!==0||none===0||best.visual<cut||(runner&&runner.d===best.d&&best.visual-runner.visual<Math.max(4,best.visual*.25))){photoCandidate=null;$('decisionStatus').textContent='Photo detector: uncertain; '+(best?best.m.san+' ('+best.d+' occupancy mismatches)':'no legal move')+'. No move recorded.';return;}
+ const key=best.m.from+best.m.to;if(photoCandidate!==key){photoCandidate=key;$('decisionStatus').textContent='Photo detector: verifying '+best.m.san+' on another stable frame.';return;}
+ const features=warp(),flat=new Uint8ClampedArray(latestFlatPixels);photoCandidate=null;photoBaseline=pixels;photoReference=photoReferenceFromFen(pixels,fen);photoFen=fen;
+ if(best.m.promotion){requestPromotion(best.m,features,flat);return;}finishMove(best.m,features,flat);photoFen=game.fen();photoReference=photoReferenceFromFen(pixels,photoFen);$('decisionStatus').textContent='Photo detector recorded '+best.m.san+'.';
+}
+function selectedRecStep(){const method=$('decisionMode').value;if(method==='zen')recStep();else if(method==='photo')photoStep();else $('decisionStatus').textContent='Combined mode paused — decision rules not configured.';}
+$('decisionMode').onchange=()=>{const method=$('decisionMode').value;$('photoPanel').hidden=method==='zen';resetTracking();$('decisionStatus').textContent=method==='zen'?'Zen Scanner decides moves independently.':method==='photo'?'Photo occupancy decides independently. Match the physical board to the last confirmed position.':'Combined mode paused — awaiting decision rules.';};
+$('savePhoto640').onclick=()=>{const a=document.createElement('a');a.href=photoCanvas.toDataURL('image/jpeg',.92);a.download='chess_board.jpg';a.click();};
+
 function recStep(){
  if(promotionPending)return;
  const now=performance.now();if(now-sampleAt<55)return;sampleAt=now;
@@ -1040,7 +1118,7 @@ function recStep(){
 }
 /* Recovery is opt-in, because two-ply inference from visual occupancy alone
    can be ambiguous. It never silently writes a guessed two-move sequence. */
-function recovery(){
+function recovery(){if($("decisionMode").value!=="zen"){msg("Zen recovery is available only in Zen Scanner mode. Use manual move or Resync.");return;}
  if(mode!=='rec'||!acceptedFeatures){msg('Start recording before using recovery.');return}
  const raw=warp(),obs=occupancyEvidence(raw),oldObs=occupancyEvidence(acceptedFeatures);
  const aligned=normalizeAgainst(raw,acceptedFeatures),changes=[];
@@ -1349,7 +1427,7 @@ $('stopBroadcastBtn').onclick=stopLive;
 $('whiteName').addEventListener('input',publishLive);
 $('blackName').addEventListener('input',publishLive);
 
-const loop=()=>{const t=Date.now();if(stream&&V.videoWidth&&W.width){wc.drawImage(V,0,0,W.width,W.height);try{({search:searchStep,scan:scanStep,pieces:pieceStep,quick:quickStep,rec:recStep}[mode]||(()=>{}))()}catch(e){console.error(e)}}
+const loop=()=>{const t=Date.now();if(stream&&V.videoWidth&&W.width){wc.drawImage(V,0,0,W.width,W.height);try{({search:searchStep,scan:scanStep,pieces:pieceStep,quick:quickStep,rec:selectedRecStep}[mode]||(()=>{}))()}catch(e){console.error(e)}}
 setTimeout(loop,Math.max(20,(mode=='rec'?65:250)-(Date.now()-t)))};loop();
 requestAnimationFrame(draw);
 </script></body></html>
