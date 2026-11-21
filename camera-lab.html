@@ -32,7 +32,11 @@ details.panel{padding:0}details>summary{padding:15px 16px;cursor:pointer;list-st
 <details class="panel diagnostics-panel"><summary>Detection diagnostics</summary><div class="detail-body"><div class="actions"><button id="b15">Yellow diagnostics: off</button><button id="cvToggle">OpenCV: loading…</button></div><div class="cv" style="margin-top:12px"><figure><figcaption>Detected position</figcaption><canvas class="sq" id="pos" width="240" height="240"></canvas></figure><figure><figcaption>Flattened board</figcaption><canvas class="sq" id="flat" width="320" height="320"></canvas></figure></div><p class="help">Red: expected piece missing. Orange: unexpected piece.</p></div></details>
 </div>
 <div class="stack">
-<section class="panel record-panel"><div class="panel-top"><h2>Experimental capture</h2><span class="tag">READY FOR INTEGRATION</span></div><p class="help">This page uses the original camera, board detection and calibration system. The existing scanner remains available below as a reference. The alternative photo-capture logic will be integrated here.</p><hr style="border:0;border-top:1px solid var(--line);margin:16px 0"><div class="panel-top"><h2>Reference scanner</h2><span class="tag">PGN</span></div><div class="move-label">Last move</div><div id="last">—</div><div id="moves">Recorded moves will appear here</div><div class="actions"><input id="manualMove" placeholder="Enter move: e4, Nf3, e2e4" aria-label="Manual chess move"><button id="addManualMove">Add move</button><button id="deleteLastMove">Undo move</button><button id="b5">Resync board</button><button id="recoverBtn">Recover missed move</button><button id="redoRecording" class="p">Restart recording</button></div><button id="b12" class="p">Export PGN file</button><textarea id="pgnbox" readonly></textarea><textarea id="illegalFenBox" readonly style="display:none" aria-label="Illegal move FEN positions"></textarea><button id="exportIllegalFen" style="display:none">Export illegal-move FEN</button><p class="help">Enter SAN or coordinate moves. Coordinate notation also supports recording physically played illegal moves.</p></section>
+<section class="panel record-panel"><div class="panel-top"><h2>Photo occupancy detection</h2><span class="tag">NO ONNX</span></div>
+<div class="row"><label class="field">Occupancy threshold <input id="labThreshold" type="number" min="0.1" max="2" step="0.05" value="0.5"></label><label class="field">Stable delay (ms) <input id="labDelay" type="number" min="300" max="2000" step="100" value="500"></label></div>
+<div class="row"><label><input id="labAuto" type="checkbox" checked style="min-height:0"> Automatic capture</label></div><div class="actions"><button id="labCapture" class="p">Capture &amp; analyze</button><button id="labBaseline">Confirm starting / current photo</button></div>
+<p id="labStatus" role="status" class="help">Calibrate the empty board, then arrange the 32 pieces. The first stable photo becomes the reference.</p><div class="cv"><figure><figcaption>Previous confirmed photo</figcaption><canvas id="labPrevious" class="sq" width="640" height="640"></canvas></figure><figure><figcaption>Latest refined photo</figcaption><canvas id="labCurrent" class="sq" width="640" height="640"></canvas></figure></div>
+<div class="row"><button id="labDownload">Download latest photo</button></div><div id="labGrid" style="display:grid;grid-template-columns:repeat(8,1fr);gap:2px;margin:12px 0"></div><div id="labCandidates" class="actions"></div><p class="help">Green squares = occupied; dark squares = empty; red border = mismatch against the confirmed position. If occupancy cannot uniquely identify a move, choose the actual legal move below.</p><hr style="border:0;border-top:1px solid var(--line);margin:16px 0"><div class="panel-top"><h2>Recorded game</h2><span class="tag">PGN</span></div><div class="move-label">Last move</div><div id="last">—</div><div id="moves">Recorded moves will appear here</div><div class="actions"><input id="manualMove" placeholder="Enter move: e4, Nf3, e2e4" aria-label="Manual chess move"><button id="addManualMove">Add move</button><button id="deleteLastMove">Undo move</button><button id="b5">Resync board</button><button id="recoverBtn">Recover missed move</button><button id="redoRecording" class="p">Restart recording</button></div><button id="b12" class="p">Export PGN file</button><textarea id="pgnbox" readonly></textarea><textarea id="illegalFenBox" readonly style="display:none" aria-label="Illegal move FEN positions"></textarea><button id="exportIllegalFen" style="display:none">Export illegal-move FEN</button><p class="help">Enter SAN or coordinate moves. Coordinate notation also supports recording physically played illegal moves.</p></section>
 <details class="panel player-panel"><summary>Player details (optional)</summary><div class="detail-body"><div class="row"><label class="field">White player<input id="whiteName" placeholder="Name"></label><label class="field">Black player<input id="blackName" placeholder="Name"></label></div></div></details>
 </div></main>
 <div id="promotionPrompt" role="dialog" aria-modal="true" aria-labelledby="promotionTitle">
@@ -274,7 +278,7 @@ for(let c=0;c<2;c++){const a=[];for(let q=0;q<64;q++)if(E(q)&&(((q>>3)+(q&7))&1)
 const T=[];for(let q=0;q<64;q++){const c=((q>>3)+(q&7))&1;T[q]=E(q)?Math.max(fl,Math.min(cT[c],.5*d[q])):cT[c]}
 let ok=0,extra=0;const bad=[];for(let q=0;q<64;q++){if(E(q)){if(d[q]>T[q])ok++;else bad.push(nm(q))}else if(d[q]>T[q])extra++}
 thrQ=T;drawPos(d.map((v,q)=>v>T[q]),true);prog(ok/32);st(3,ok+'/32 pieces seen');
-if((ok==32&&extra<=3&&pst>=6)||(ok>=30&&pst>=12)||forceStart){forceStart=0;Nz=1.5;newGame();refF=null;prevF=null;stable=0;unclear=0;mode='rec';resetTracking();st(3,'32 pieces seen ✓ (rest assumed empty)','ok');st(4,'recording – play!','ok');prog(1);msg('READY – all other squares are treated as empty'+(bad.length?' (weak pieces: '+bad.join(' ')+')':'')+'. Start playing, moves are recorded automatically.');readySnd();spk('Board ready. Start playing.')}
+if((ok==32&&extra<=3&&pst>=6)||(ok>=30&&pst>=12)||forceStart){forceStart=0;Nz=1.5;newGame();refF=null;prevF=null;stable=0;unclear=0;mode='rec';resetTracking();st(3,'32 pieces seen ✓ (rest assumed empty)','ok');st(4,'recording – play!','ok');prog(1);msg('READY – keep hands away until the first reference photo is captured.');readySnd();spk('Board ready. Start playing.')}
 else if(pst>=12)msg('Cannot see pieces on: '+bad.join(' ')+(extra?'; unexpected objects on '+extra+' middle squares':'')+'. Check the setup and light, or press Resync to start anyway.')}
 /* v18: track stable observations and classify square occupancy relative to
    the empty-board reference.  Never advance a game on a single noisy frame.
@@ -611,7 +615,7 @@ function averageSettled(F){
  settledCount++;
  return Float32Array.from(settledAccum,v=>v/settledCount);
 }
-function resetTracking(){lastGoodSnapshot=null;cancelPromotion();uncertaintySince=0;pendingVerification=null;acceptedFlatPixels=null;acceptedFeatures=null;prevF=null;quietCount=0;proposal='';proposalCount=0;recNoise=2;baselineCount=0;baselineAccum=null;motionAt=0;freezeSince=0;clearSettled();}
+function resetTracking(){if(typeof labReset==='function')labReset();lastGoodSnapshot=null;cancelPromotion();uncertaintySince=0;pendingVerification=null;acceptedFlatPixels=null;acceptedFeatures=null;prevF=null;quietCount=0;proposal='';proposalCount=0;recNoise=2;baselineCount=0;baselineAccum=null;motionAt=0;freezeSince=0;clearSettled();}
 
 /* Compare full square photographs (not just average square colors).
    Per-square illumination normalization discounts uniform brightness changes.
@@ -1142,7 +1146,326 @@ $('b12').onclick=()=>{if(!game||(!game.history().length&&!physicalMoveLog.length
 try{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([p],{type:'application/x-chess-pgn'}));a.download='chess-game.pgn';document.body.appendChild(a);a.click();a.remove()}catch(e){}
 try{navigator.clipboard.writeText(p)}catch(e){}msg('PGN exported (also copied). If no file downloaded, copy it from the box above.')};
 
-const loop=()=>{const t=Date.now();if(stream&&V.videoWidth&&W.width){wc.drawImage(V,0,0,W.width,W.height);try{({search:searchStep,scan:scanStep,pieces:pieceStep,rec:recStep}[mode]||(()=>{}))()}catch(e){console.error(e)}}
+
+/* Camera Lab: independent occupancy-only experiment. Photo warp and occupancy classifier
+   are adapted from the supplied photos-to-PGN and no-ONNX files. */
+const Logic = (() => {
+  const FILES = 'abcdefgh';
+  const OUT = 644;                 // board image size the model expects
+  const ORIENTS = ['bottom', 'top', 'left', 'right'];
+
+  // ---- board geometry -------------------------------------------------
+  // Maps a cell of the straightened board image (row r from top, column c from
+  // left) to a square index (a1 = 0, b1 = 1 ... h8 = 63) for each orientation
+  // = which side of the picture White sits on.
+  function cellToSq(r, c, orient) {
+    let f, k;
+    switch (orient) {
+      case 'top':   f = 7 - c; k = r; break;
+      case 'left':  f = r;     k = c; break;
+      case 'right': f = 7 - r; k = 7 - c; break;
+      default:      f = c;     k = 7 - r;
+    }
+    return k * 8 + f;
+  }
+  function sqName(sq) { return FILES[sq & 7] + ((sq >> 3) + 1); }
+  function sqIndex(name) { return (name.charCodeAt(1) - 49) * 8 + FILES.indexOf(name[0]); }
+
+  function gridToOcc(grid, orient) {
+    const occ = new Uint8Array(64);
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) occ[cellToSq(r, c, orient)] = grid[r * 8 + c] ? 1 : 0;
+    return occ;
+  }
+  function occFromChess(chess) {
+    const occ = new Uint8Array(64), b = chess.board();
+    for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) if (b[i][j]) occ[(7 - i) * 8 + j] = 1;
+    return occ;
+  }
+  function dist(a, b) { let d = 0; for (let i = 0; i < 64; i++) if (a[i] !== b[i]) d++; return d; }
+
+  const START = (() => { const o = new Uint8Array(64); for (let s = 0; s < 64; s++) { const rk = s >> 3; o[s] = (rk <= 1 || rk >= 6) ? 1 : 0; } return o; })();
+  function startCheck(grid) {
+    const res = {};
+    for (const o of ORIENTS) res[o] = dist(gridToOcc(grid, o), START);
+    return res;
+  }
+
+  // ---- move inference -------------------------------------------------
+  function predicted(cur, m) {
+    const p = cur.slice(), from = sqIndex(m.from), to = sqIndex(m.to);
+    p[from] = 0; p[to] = 1;
+    if (m.flags.includes('e')) p[(from >> 3) * 8 + (to & 7)] = 0;       // en passant victim
+    if (m.flags.includes('k')) { const b = (from >> 3) * 8; p[b + 7] = 0; p[b + 5] = 1; }
+    if (m.flags.includes('q')) { const b = (from >> 3) * 8; p[b] = 0; p[b + 3] = 1; }
+    return p;
+  }
+  function rankMoves(chess, obs) {
+    const cur = occFromChess(chess), out = [];
+    for (const m of chess.moves({ verbose: true })) {
+      if (m.promotion && m.promotion !== 'q') continue;   // piece type is not visible: promote to queen
+      out.push({ m, san: m.san, d: dist(predicted(cur, m), obs) });
+    }
+    out.sort((a, b) => a.d - b.d);
+    return out;
+  }
+
+  let Chess_ = null;
+  const VAL = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+  const LOOKAHEAD = 16;
+  // Best-fit replay of the next few photos from position `c`; returns the smallest total
+  // mismatch, exploring each branch where several moves fit equally well (bounded by `budget`).
+  function lookahead(c, occs, from, k, budget = { n: 24 }) {
+    let j = from;
+    const end = Math.min(occs.length, from + k);
+    let total = 0;
+    while (j < end) {
+      const o = occs[j];
+      if (!o || c.isGameOver()) { j++; continue; }
+      const cand = rankMoves(c, o);
+      if (!cand.length) break;
+      const b = cand[0], dNone = dist(occFromChess(c), o);
+      if (dNone === 0 || dNone < b.d) { total += dNone; j++; continue; }
+      const tied = cand.filter(x => x.d === b.d);
+      if (tied.length > 1 && budget.n > 0) {
+        let bestTotal = Infinity;
+        for (const t of tied.slice(0, 4)) {
+          budget.n--;
+          const c2 = new Chess_(c.fen());
+          c2.move({ from: t.m.from, to: t.m.to, promotion: t.m.promotion });
+          bestTotal = Math.min(bestTotal, b.d + lookahead(c2, occs, j + 1, end - j - 1, budget));
+        }
+        return total + bestTotal;
+      }
+      c.move({ from: b.m.from, to: b.m.to, promotion: b.m.promotion });
+      total += b.d; j++;
+    }
+    return total;
+  }
+
+  // occs[i] = Uint8Array(64) by square (or null if the photo was unreadable).
+  // occs[0] must be the starting position. overrides: {frameIndex: 'Nf3' | '-'}
+  function replay(occs, overrides, Chess) {
+    Chess_ = Chess;
+    const chess = new Chess(), rows = [];
+    for (let i = 1; i < occs.length; i++) {
+      const obs = occs[i];
+      if (!obs) { rows.push({ frame: i, san: '', d: null, status: 'unreadable', after: null }); continue; }
+      if (chess.isGameOver()) { rows.push({ frame: i, san: '', d: null, status: 'after-end', after: occFromChess(chess) }); continue; }
+      const ov = overrides && overrides[i];
+      if (ov) {
+        if (ov === '-') { rows.push({ frame: i, san: '', d: dist(occFromChess(chess), obs), status: 'skipped', after: occFromChess(chess) }); continue; }
+        try {
+          const mv = chess.move(ov);
+          const after = occFromChess(chess);
+          rows.push({ frame: i, san: mv.san, d: dist(after, obs), status: 'manual', after, alts: [] });
+        } catch (e) {
+          rows.push({ frame: i, san: '', d: null, status: 'bad-override', after: occFromChess(chess) });
+        }
+        continue;
+      }
+      const cur = occFromChess(chess), dNone = dist(cur, obs);
+      const cand = rankMoves(chess, obs), best = cand[0];
+      if (dNone === 0 || dNone < best.d) { rows.push({ frame: i, san: '', d: dNone, status: 'no-move', after: cur }); continue; }
+      // Moves that leave the same squares occupied (e.g. one piece that can capture two
+      // different things) cannot be told apart from this photo alone: try each against
+      // the next few photos and keep the one that fits best.
+      let pick = best, tie = false;
+      const tied = cand.filter(c => c.d === best.d);
+      if (tied.length > 1) {
+        const scored = tied.map(t => {
+          const c2 = new Chess(chess.fen());
+          c2.move({ from: t.m.from, to: t.m.to, promotion: t.m.promotion });
+          return { t, total: t.d + lookahead(c2, occs, i + 1, LOOKAHEAD), val: VAL[t.m.captured] || 0 };
+        });
+        scored.sort((a, b) => a.total - b.total || b.val - a.val);
+        pick = scored[0].t;
+        tie = scored.length > 1 && scored[1].total - scored[0].total < 2;   // not clearly better: flag it
+      }
+      chess.move({ from: pick.m.from, to: pick.m.to, promotion: pick.m.promotion });
+      const after = occFromChess(chess);
+      rows.push({
+        frame: i, san: pick.san, d: pick.d, after,
+        status: tie ? 'ambiguous' : pick.d === 0 ? 'ok' : pick.d <= 2 ? 'check' : 'unsure',
+        alts: cand.filter(c => c !== pick).slice(0, 4).map(c => ({ san: c.san, d: c.d })),
+      });
+    }
+    return { chess, rows };
+  }
+
+  // ---- perspective warp -----------------------------------------------
+  // q = 4 source points for the unit-square corners (0,0) (1,0) (1,1) (0,1).
+  function homography(q) {
+    const [[x0, y0], [x1, y1], [x2, y2], [x3, y3]] = q;
+    const sx = x0 - x1 + x2 - x3, sy = y0 - y1 + y2 - y3;
+    let a, b, c, d, e, f, g, h;
+    if (Math.abs(sx) < 1e-9 && Math.abs(sy) < 1e-9) {
+      a = x1 - x0; b = x3 - x0; c = x0; d = y1 - y0; e = y3 - y0; f = y0; g = 0; h = 0;
+    } else {
+      const dx1 = x1 - x2, dx2 = x3 - x2, dy1 = y1 - y2, dy2 = y3 - y2;
+      const den = dx1 * dy2 - dx2 * dy1;
+      g = (sx * dy2 - dx2 * sy) / den; h = (dx1 * sy - sx * dy1) / den;
+      a = x1 - x0 + g * x1; b = x3 - x0 + h * x3; c = x0;
+      d = y1 - y0 + g * y1; e = y3 - y0 + h * y3; f = y0;
+    }
+    return [a, b, c, d, e, f, g, h];
+  }
+  function mapPt(H, u, v) {
+    const w = H[6] * u + H[7] * v + 1;
+    return [(H[0] * u + H[1] * v + H[2]) / w, (H[3] * u + H[4] * v + H[5]) / w];
+  }
+  // src: RGBA pixels (sw x sh). cornersFrac: 4 points as fractions of the image,
+  // order top-left, top-right, bottom-right, bottom-left. Returns size x size RGBA.
+  function warp(src, sw, sh, cornersFrac, size = OUT) {
+    const H = homography(cornersFrac.map(([x, y]) => [x * sw, y * sh]));
+    const out = new Uint8ClampedArray(size * size * 4);
+    for (let y = 0; y < size; y++) {
+      const v = (y + 0.5) / size;
+      for (let x = 0; x < size; x++) {
+        const u = (x + 0.5) / size;
+        let [X, Y] = mapPt(H, u, v);
+        X -= 0.5; Y -= 0.5;
+        X = Math.min(Math.max(X, 0), sw - 1.001); Y = Math.min(Math.max(Y, 0), sh - 1.001);
+        const x0 = Math.floor(X), y0 = Math.floor(Y), fx = X - x0, fy = Y - y0;
+        const i00 = (y0 * sw + x0) * 4, i10 = i00 + 4, i01 = i00 + sw * 4, i11 = i01 + 4;
+        const o = (y * size + x) * 4;
+        for (let ch = 0; ch < 3; ch++) {
+          out[o + ch] = (src[i00 + ch] * (1 - fx) + src[i10 + ch] * fx) * (1 - fy) +
+                        (src[i01 + ch] * (1 - fx) + src[i11 + ch] * fx) * fy;
+        }
+        out[o + 3] = 255;
+      }
+    }
+    return out;
+  }
+
+  // ---- occupancy: model input / output ------------------------------------
+  function toCHW(rgba, size = OUT) {
+    const n = size * size, f = new Float32Array(3 * n);
+    for (let i = 0; i < n; i++) {
+      f[i] = rgba[i * 4] / 255; f[n + i] = rgba[i * 4 + 1] / 255; f[2 * n + i] = rgba[i * 4 + 2] / 255;
+    }
+    return f;
+  }
+  // logits: 64 squares x 13 classes, class 0 = empty. Returns grid[r*8+c] (1 = occupied).
+  function logitsToGrid(logits) {
+    const grid = new Uint8Array(64);
+    for (let sq = 0; sq < 64; sq++) {
+      let best = 0, bv = -Infinity;
+      for (let k = 0; k < 13; k++) { const v = logits[sq * 13 + k]; if (v > bv) { bv = v; best = k; } }
+      grid[sq] = best !== 0 ? 1 : 0;
+    }
+    return grid;
+  }
+
+  // ---- occupancy: classical (no model) --------------------------------------
+  function histMedian(h) {
+    let total = 0; for (let i = 0; i < 256; i++) total += h[i];
+    let acc = 0; for (let i = 0; i < 256; i++) { acc += h[i]; if (acc * 2 >= total) return i; }
+    return 128;
+  }
+  function classicalGrid(rgba, size = OUT, threshold = 0.5) {
+    const s = size / 8, m = Math.floor(s * 0.18);
+    const box = (r, c) => [Math.floor(c * s + m), Math.floor((c + 1) * s - m), Math.floor(r * s + m), Math.floor((r + 1) * s - m)];
+    // empty-square colour per parity, estimated from the four middle ranks
+    const hist = [0, 1].map(() => [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)]);
+    for (let r = 2; r <= 5; r++) for (let c = 0; c < 8; c++) {
+      const [x0, x1, y0, y1] = box(r, c), p = (r + c) & 1;
+      for (let y = y0; y < y1; y += 2) for (let x = x0; x < x1; x += 2) {
+        const i = (y * size + x) * 4;
+        hist[p][0][rgba[i]]++; hist[p][1][rgba[i + 1]]++; hist[p][2][rgba[i + 2]]++;
+      }
+    }
+    const ref = hist.map(h => h.map(histMedian));
+    const grid = new Uint8Array(64), scores = new Float32Array(64);
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+      const [x0, x1, y0, y1] = box(r, c), w = x1 - x0, h = y1 - y0, R = ref[(r + c) & 1];
+      const g = new Float32Array(w * h);
+      let far = 0;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const i = ((y0 + y) * size + (x0 + x)) * 4;
+        const dr = rgba[i] - R[0], dg = rgba[i + 1] - R[1], db = rgba[i + 2] - R[2];
+        if (Math.sqrt(dr * dr + dg * dg + db * db) > 45) far++;
+        g[y * w + x] = (rgba[i] + rgba[i + 1] + rgba[i + 2]) / 3;
+      }
+      let ex = 0, ey = 0;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w - 1; x++) ex += Math.abs(g[y * w + x + 1] - g[y * w + x]);
+      for (let y = 0; y < h - 1; y++) for (let x = 0; x < w; x++) ey += Math.abs(g[(y + 1) * w + x] - g[y * w + x]);
+      const score = far / (w * h) + 0.04 * (ex / (h * (w - 1)) + ey / ((h - 1) * w));
+      scores[r * 8 + c] = score;
+      grid[r * 8 + c] = score > threshold ? 1 : 0;
+    }
+    return { grid, scores };
+  }
+
+  return { FILES, OUT, ORIENTS, cellToSq, sqName, sqIndex, gridToOcc, occFromChess, dist, START, startCheck,
+           predicted, rankMoves, replay, homography, mapPt, warp, toCHW, logitsToGrid, classicalGrid };
+})();
+
+
+const labSize=640, labRaw=document.createElement('canvas'),labRawCtx=labRaw.getContext('2d',{willReadFrequently:true});
+let labVerify=null,labReference=null,labLastFrame=null,labStableAt=0,labLastCheck=0,labPending=null,labLastPhoto=null,labFen=null,labMode='',labGeometry='',labMotion=false;
+const labUI=t=>{$('labStatus').textContent=t};
+function labReset(){labVerify=null;labReference=null;labLastFrame=null;labStableAt=0;labPending=null;labFen=null;labMotion=false;$('labCandidates').replaceChildren();$('labPrevious').getContext('2d').clearRect(0,0,640,640);}
+function labPhoto(size,full=false){
+ if(!quad||!V.videoWidth||!W.width||!stream)return null;
+ let src,w,h;
+ if(full){w=V.videoWidth;h=V.videoHeight;labRaw.width=w;labRaw.height=h;labRawCtx.drawImage(V,0,0,w,h);src=labRawCtx.getImageData(0,0,w,h).data;}
+ else{w=W.width;h=W.height;src=wc.getImageData(0,0,w,h).data;}
+ const points=rq().map(([x,y])=>[x/V.videoWidth,y/V.videoHeight]);
+ if(points.some(p=>p.some(v=>!Number.isFinite(v)||v<0||v>1)))return null;
+ return Logic.warp(src,w,h,points,size);
+}
+function labDraw(id,pixels){const can=$ (id),ctx=can.getContext('2d');ctx.putImageData(new ImageData(new Uint8ClampedArray(pixels),640,640),0,0);}
+function labFingerprint(p,size){const a=new Float32Array(64*16);let n=0;for(let r=0;r<8;r++)for(let c=0;c<8;c++)for(let y=1;y<=4;y++)for(let x=1;x<=4;x++){const px=Math.floor((c+x/5)*size/8),py=Math.floor((r+y/5)*size/8),i=(py*size+px)*4;a[n++]=(p[i]+p[i+1]+p[i+2])/3;}return a;}
+function labDifference(a,b){if(!a||!b)return Infinity;let mean=0;for(let i=0;i<a.length;i++)mean+=a[i]-b[i];mean/=a.length;let sum=0;for(let i=0;i<a.length;i++)sum+=Math.abs(a[i]-b[i]-mean);return sum/a.length;}
+function labObs(p){const threshold=Math.max(.1,Math.min(2,Number($('labThreshold').value)||.5));const {grid,scores}=Logic.classicalGrid(p,640,threshold);return {grid,scores,occ:Logic.gridToOcc(grid,'bottom')};}
+function labRenderObs(obs){const dst=$('labGrid'),expected=Logic.occFromChess(game);dst.replaceChildren();for(let r=0;r<8;r++)for(let c=0;c<8;c++){const q=r*8+c,i=Logic.cellToSq(r,c,'bottom'),el=document.createElement('div');el.textContent=Logic.sqName(i);el.title='Occupancy score '+obs.scores[q].toFixed(2);el.style.cssText='padding:5px 0;text-align:center;font-size:10px;border-radius:3px;background:'+(obs.grid[q]?'#247e63':'#273345')+';border:1px solid '+(obs.occ[i]!==expected[i]?'#ff777e':'transparent');dst.append(el);}}
+function labAcceptPhoto(photo,fp){labVerify=null;labReference={photo,fp};labFen=game.fen();labLastFrame=fp;labStableAt=0;labMotion=false;labPending=null;$('labCandidates').replaceChildren();labDraw('labPrevious',photo);}
+function labCommit(m,photo,fp){const old=game.fen(),played=game.move({from:m.from,to:m.to,promotion:m.promotion||'q'});if(!played){labUI('Move no longer legal. Recheck the board.');return;}physicalMoveLog.push({label:played.san,fen:game.fen(),previousFen:old,illegal:false});showMoves();drawPos(null);const previous=labReference?.photo;labAcceptPhoto(photo,fp);if(previous)labDraw('labPrevious',previous);labRenderObs(labObs(photo));labUI('Recorded '+played.san+' · waiting for next move.');msg('Photo move: '+played.san);sayMove(played);if(game.game_over())labUI('Game finished. Export PGN.');}
+function labAnalyze(forceBaseline=false,manual=false){
+ if(mode!=='rec'||!game||!stream){labUI('Finish board calibration and starting-position verification first.');return;}
+ const p=labPhoto(640,true);if(!p){labUI('Cannot refine photo; check all four locked corners.');return;}
+ const fp=labFingerprint(p,640),obs=labObs(p);if(labReference)labDraw('labPrevious',labReference.photo);labLastPhoto=p;labDraw('labCurrent',p);labRenderObs(obs);
+ const cur=Logic.occFromChess(game),none=Logic.dist(cur,obs.occ);
+ if(forceBaseline||!labReference||labFen!==game.fen()){
+  if(none!==0&&!forceBaseline){labUI('Reference photo disagrees on '+none+' squares. Adjust threshold or confirm the physical position manually.');return;}
+  if(forceBaseline&&none!==0&&!confirm('The occupancy test disagrees on '+none+' squares. Is the physical position definitely correct?'))return;
+  labAcceptPhoto(p,fp);labUI('Reference photo captured. Play one move, then remove your hands.');return;
+ }
+ if(game.game_over())return;
+ const ranked=Logic.rankMoves(game,obs.occ);if(!ranked.length)return;
+ if(none===0){labVerify=null;labPending=null;$('labCandidates').replaceChildren();labUI('No occupancy change detected. Waiting for a move.');return;}
+ const best=ranked[0],ties=ranked.filter(x=>x.d===best.d);
+ if(best.d===0&&ties.length===1&&!best.m.promotion){const key=game.fen()+' '+best.san;if(!manual&&labVerify!==key){labVerify=key;labMotion=true;labUI('Possible '+best.san+' · verifying with another stable photo.');return;}labCommit(best.m,p,fp);return;}labVerify=null;
+ if(best.d>=none&&!manual){labUI('Unclear photo; waiting for a clearer board.');return;}
+ labPending={photo:p,fp,fen:game.fen()};const dst=$('labCandidates');dst.replaceChildren();
+ const options=ranked.filter(x=>x.d===best.d).slice(0,12);
+ for(const x of options){const moves=x.m.promotion?game.moves({verbose:true}).filter(m=>m.from===x.m.from&&m.to===x.m.to):[x.m];for(const m of moves){const b=document.createElement('button');b.textContent=m.san+' ('+x.d+' mismatch)';b.onclick=()=>{if(labPending&&labPending.fen===game.fen())labCommit(m,p,fp)};dst.append(b);}}
+ const retry=document.createElement('button');retry.textContent='Rescan / reject';retry.onclick=()=>{labPending=null;dst.replaceChildren();labStableAt=0;labLastFrame=null;labUI('Rescan requested.');};dst.append(retry);
+ labUI('Ambiguous or noisy occupancy ('+best.d+' mismatches). Confirm the actual move, or rescan.');
+}
+function labStep(){
+ if(mode!==labMode){labMode=mode;labReset();}
+ if(mode!=='rec')return;
+ const geometry=JSON.stringify(rq());if(geometry!==labGeometry){labGeometry=geometry;labReset();}
+ if(labFen&&labFen!==game.fen())labReset();
+ if(labPending||!$('labAuto').checked||game.game_over())return;
+ const now=performance.now();if(now-labLastCheck<250)return;labLastCheck=now;
+ const p=labPhoto(320);if(!p)return;const fp=labFingerprint(p,320);
+ const motion=labDifference(fp,labLastFrame);labLastFrame=fp;
+ if(motion>2.8){labStableAt=0;labMotion=true;labVerify=null;return;}
+ if(!labStableAt)labStableAt=now;
+ if(now-labStableAt<Math.max(300,Number($('labDelay').value)||500))return;
+ if(labReference&&!labMotion&&labDifference(fp,labReference.fp)<1.0)return;
+ labStableAt=now;labMotion=false;labAnalyze(false,false);
+}
+$('labCapture').onclick=()=>{labPending=null;labAnalyze(false,true)};
+$('labBaseline').onclick=()=>labAnalyze(true,true);
+$('labDownload').onclick=()=>{if(!labLastPhoto){labUI('Capture a photo first.');return;}const a=document.createElement('a');a.href=$('labCurrent').toDataURL('image/jpeg',.92);a.download='zen-board-photo.jpg';a.click()};
+$('labThreshold').onchange=()=>{if(mode==='rec'){labPending=null;$('labCandidates').replaceChildren();labAnalyze(false,true);}};
+
+$('recoverBtn').onclick=()=>labAnalyze(false,true);
+const loop=()=>{if(mode!=='rec'&&labMode==='rec'){labMode=mode;labReset();}const t=Date.now();if(stream&&V.videoWidth&&W.width){wc.drawImage(V,0,0,W.width,W.height);try{({search:searchStep,scan:scanStep,pieces:pieceStep,rec:labStep}[mode]||(()=>{}))()}catch(e){console.error(e)}}
 setTimeout(loop,Math.max(20,(mode=='rec'?65:250)-(Date.now()-t)))};loop();
 requestAnimationFrame(draw);
 </script></body></html>
