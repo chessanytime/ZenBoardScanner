@@ -37,8 +37,8 @@ small{color:var(--mut)}
 #promotionChoices button{min-width:0;font-size:18px;padding:16px 8px}
 #pgnbox{display:none;width:100%;height:90px;margin-top:6px;background:var(--card);color:var(--fg);border:1px solid #8fa0ad55;border-radius:8px;padding:6px;font:12px monospace}
 </style></head><body>
-<h1>Chess Move Scanner v48</h1>
-<label for="decisionMode"><strong>Move decision method:</strong> <select class="camera-select" id="decisionMode"><option value="zen" selected>1. Zen Scanner</option><option value="photo">2. Photo occupancy move detection</option><option value="combined">3. Combined logic (awaiting decision rules)</option></select></label><p><small id="decisionStatus">Zen Scanner decides moves independently.</small></p>
+<h1>Chess Move Scanner v49</h1>
+<label for="decisionMode"><strong>Move decision method:</strong> <select class="camera-select" id="decisionMode"><option value="zen" selected>1. Zen Scanner</option><option value="photo">2. Photo occupancy move detection</option><option value="combined">3. Combined logic</option></select></label><div id="combinedControls" hidden><label for="combinedResolve"><strong>Combined decision:</strong> <select id="combinedResolve" class="camera-select"><option value="auto" selected>Auto resolve</option><option value="manual">User decides</option></select></label><small>Scores compare Zen evidence, photo occupancy and legal moves from the previous FEN.</small></div><p><small id="decisionStatus">Zen Scanner decides moves independently.</small></p><section id="combinedChoices" hidden style="border:2px solid var(--ac);border-radius:10px;padding:10px;margin:8px 0"><strong>Possible moves from the confirmed position</strong><p id="combinedSummary"></p><small>Percentages are relative evidence scores, not measured probabilities. Select the move actually played.</small><div id="combinedMoveList" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px;max-height:50vh;overflow:auto;margin:8px 0"></div><button id="combinedRetry">Keep waiting / rescan</button></section>
 <label for="calibrationMode"><strong>Empty-board calibration:</strong> <select id="calibrationMode" class="camera-select"><option value="full" selected>Yes — calibrate empty board (recommended)</option><option value="skip">No — start with pieces already set up</option></select></label><p><small>Choose before locking the border. Skipping estimates empty squares from the four empty middle ranks of the standard starting position.</small></p>
 <div id="stage"><video id="v" playsinline muted autoplay></video><canvas id="ov"></canvas></div>
 <div id="msg">Choose calibration mode, then tap “Start camera”. Show all four corners; use manual border locking if pieces obscure the checkerboard.</div>
@@ -689,7 +689,7 @@ function averageSettled(F){
  settledCount++;
  return Float32Array.from(settledAccum,v=>v/settledCount);
 }
-function resetTracking(){resetPhotoDetector();lastGoodSnapshot=null;cancelPromotion();uncertaintySince=0;pendingVerification=null;acceptedFlatPixels=null;acceptedFeatures=null;prevF=null;quietCount=0;proposal='';proposalCount=0;recNoise=2;baselineCount=0;baselineAccum=null;motionAt=0;freezeSince=0;clearSettled();}
+function resetTracking(){resetPhotoDetector();resetCombined();lastGoodSnapshot=null;cancelPromotion();uncertaintySince=0;pendingVerification=null;acceptedFlatPixels=null;acceptedFeatures=null;prevF=null;quietCount=0;proposal='';proposalCount=0;recNoise=2;baselineCount=0;baselineAccum=null;motionAt=0;freezeSince=0;clearSettled();}
 
 /* Compare full square photographs (not just average square colors).
    Per-square illumination normalization discounts uniform brightness changes.
@@ -946,19 +946,61 @@ function photoReferenceFromFen(pixels,fen){const g=new Chess(fen),occupied=occ(g
 function photoChanges(a,b){const d=new Float32Array(64);if(!a||!b)return d;for(let q=0;q<64;q++){const r=q>>3,c=q%8;let sum=0,n=0;for(let y=r*80+14;y<(r+1)*80-14;y+=5)for(let x=c*80+14;x<(c+1)*80-14;x+=5){const i=(y*640+x)*4;sum+=Math.abs(a[i]-b[i])+Math.abs(a[i+1]-b[i+1])+Math.abs(a[i+2]-b[i+2]);n+=3;}d[q]=sum/n;}return d;}
 function rankPhotoMoves(fen,grid,changes){const g=new Chess(fen),cur=occ(g),distance=a=>a.reduce((n,v,q)=>n+(!!v!==!!grid[q]),0),none=distance(cur),rows=[];for(const m of g.moves({verbose:true})){if(m.promotion&&m.promotion!=='q')continue;const next=new Chess(fen);next.move({from:m.from,to:m.to,promotion:m.promotion||'q'});const from=sq(m.from),to=sq(m.to);rows.push({m,d:distance(occ(next)),visual:Math.min(changes[from],changes[to])});}rows.sort((a,b)=>a.d-b.d||b.visual-a.visual);return {none,rows};}
 function photoStep(){if(!game||promotionPending||game.game_over())return;const now=performance.now();if(now-photoAt<350)return;photoAt=now;
- const pixels=capturePhoto640();if(!pixels)return;const motion=photoChanges(photoLast,pixels);photoLast=pixels;const moving=motion.some(v=>v>5);if(moving){photoQuiet=0;photoCandidate=null;return;}
+ const pixels=capturePhoto640();if(!pixels)return;const motion=photoChanges(photoLast,pixels);photoLast=pixels;const moving=motion.some(v=>v>5);if(moving){photoQuiet=0;photoCandidate=null;combinedPhoto=null;combinedProposal=null;return;}
  if(++photoQuiet<3)return;const fen=game.fen();
  if(!photoBaseline||photoFen!==fen){photoBaseline=pixels;photoFen=fen;photoReference=photoReferenceFromFen(pixels,fen);photoCandidate=null;$('decisionStatus').textContent='Photo detector calibrated to current confirmed FEN. Play a move.';return;}
- const changes=photoChanges(photoBaseline,pixels),localNoise=median(Array.from(changes)),cut=Math.max(5,localNoise*2.5);if(changes.filter(v=>v>cut).length<2)return;
- if(changes.filter(v=>v>cut).length>15){$('decisionStatus').textContent='Photo detector: broad change; waiting for clear board.';return;}
+ const changes=photoChanges(photoBaseline,pixels),localNoise=median(Array.from(changes)),cut=Math.max(5,localNoise*2.5);if(changes.filter(v=>v>cut).length<2){photoCandidate=null;combinedPhoto=null;combinedProposal=null;return;}
+ if(changes.filter(v=>v>cut).length>15){combinedPhoto=null;$('decisionStatus').textContent='Photo detector: broad change; waiting for clear board.';return;}
  const {grid}=classicalGrid(pixels,640,.5,photoReference),{none,rows}=rankPhotoMoves(fen,grid,changes),best=rows[0],runner=rows[1];
+ if($("decisionMode").value==="combined"){combinedPhoto={fen,at:now,rows,none,cut,pixels,changes};return;}
  if(!best||best.d!==0||none===0||best.visual<cut||(runner&&runner.d===best.d&&best.visual-runner.visual<Math.max(4,best.visual*.25))){photoCandidate=null;$('decisionStatus').textContent='Photo detector: uncertain; '+(best?best.m.san+' ('+best.d+' occupancy mismatches)':'no legal move')+'. No move recorded.';return;}
  const key=best.m.from+best.m.to;if(photoCandidate!==key){photoCandidate=key;$('decisionStatus').textContent='Photo detector: verifying '+best.m.san+' on another stable frame.';return;}
  const features=warp(),flat=new Uint8ClampedArray(latestFlatPixels);photoCandidate=null;photoBaseline=pixels;photoReference=photoReferenceFromFen(pixels,fen);photoFen=fen;
  if(best.m.promotion){requestPromotion(best.m,features,flat);return;}finishMove(best.m,features,flat);photoFen=game.fen();photoReference=photoReferenceFromFen(pixels,photoFen);$('decisionStatus').textContent='Photo detector recorded '+best.m.san+'.';
 }
-function selectedRecStep(){const method=$('decisionMode').value;if(method==='zen')recStep();else if(method==='photo')photoStep();else $('decisionStatus').textContent='Combined mode paused — decision rules not configured.';}
-$('decisionMode').onchange=()=>{const method=$('decisionMode').value;$('photoPanel').hidden=method==='zen';resetTracking();$('decisionStatus').textContent=method==='zen'?'Zen Scanner decides moves independently.':method==='photo'?'Photo occupancy decides independently. Match the physical board to the last confirmed position.':'Combined mode paused — awaiting decision rules.';};
+let combinedPhoto=null,combinedZen=null,combinedPending=null,combinedProposal=null,combinedRetryAt=0;
+const moveKey=m=>m.from+m.to;
+function resetCombined(){combinedPhoto=null;combinedZen=null;combinedPending=null;combinedProposal=null;combinedRetryAt=0;$('combinedChoices').hidden=true;$('combinedMoveList').replaceChildren();}
+function combinedRank(legal,zen,photo){
+ const zmap=new Map((zen?.rows||[]).map(r=>[r.key,r.score]));const pmap=new Map((photo?.rows||[]).map(r=>[moveKey(r.m),r]));
+ const zmax=Math.max(0,...zmap.values()),pmin=Math.min(64,...Array.from(pmap.values(),r=>r.d));
+ const seen=new Set(),items=[];for(const m of legal){const key=moveKey(m);if(seen.has(key))continue;seen.add(key);const z=zmap.get(key),p=pmap.get(key);
+ // The two independent scores are converted to comparable bounded log weights.
+ // FEN legality is a hard filter, never a made-up chess-engine preference.
+ const ze=zen?(z===undefined?-5:Math.max(-5,(z-zmax)/12)):0;
+ const pe=photo?(p?Math.max(-6,-1.35*(p.d-pmin))+Math.min(2,p.visual/Math.max(5,photo.cut)):-6):0;
+ const verification=zen?.verified===key?1.5:0;
+ items.push({m,key,z,p,weight:ze+pe+verification});}
+ items.sort((a,b)=>b.weight-a.weight);if(!items.length)return items;const max=items[0].weight,total=items.reduce((n,r)=>n+Math.exp(r.weight-max),0);for(const r of items)r.percent=100*Math.exp(r.weight-max)/total;return items;
+}
+function combinedSummary(zen,photo){const z=zen?.verifiedMove?.san||zen?.rows?.[0]?.moves?.[0]?.san||'no confident move',p=photo?.rows?.[0];return 'Zen: '+z+' · Photo: '+(p?p.m.san+' ('+p.d+' square mismatches)':'no result');}
+function combinedCommit(row,pending,manual){if(!pending||!game||game.fen()!==pending.fen){resetCombined();msg('Confirmed FEN changed — rescan before recording.');return;}
+ const pixels=capturePhoto640();if(!pixels){msg('Camera image unavailable. Rescan.');return;}const drift=photoChanges(pending.pixels,pixels);if(drift.some(v=>v>8)){resetCombined();msg('Board changed since the proposed move. Waiting for a fresh stable image.');return;}
+ const features=warp(),flat=new Uint8ClampedArray(latestFlatPixels),m=row.m;resetCombined();photoCandidate=null;
+ if(m.promotion){requestPromotion(m,features,flat);return;}
+ const before=game.fen();finishMove(m,features,flat);if(game.fen()===before)return;photoBaseline=pixels;photoLast=pixels;photoFen=game.fen();photoReference=photoReferenceFromFen(pixels,photoFen);photoQuiet=0;$('decisionStatus').textContent=(manual?'User confirmed ':'Combined recorded ')+m.san+' ('+row.percent.toFixed(1)+'% relative score).';
+}
+function showCombinedChoices(rows,pending,summary){combinedPending=pending;$('combinedChoices').hidden=false;$('combinedSummary').textContent=summary;const list=$('combinedMoveList');list.replaceChildren();for(const row of rows){const b=document.createElement('button');b.type='button';b.textContent=(row.m.promotion?row.m.from+'–'+row.m.to+' (promotion)':row.m.san)+' · '+row.percent.toFixed(1)+'%';b.title='Zen score: '+(row.z===undefined?'unavailable':row.z.toFixed(1))+' | Photo mismatches: '+(row.p?.d??'unavailable');b.onclick=()=>combinedCommit(row,pending,true);list.appendChild(b);}msg('Choose the move actually played. Recording is paused until confirmed.');}
+function resolveCombined(){if(!game||combinedPending||promotionPending||performance.now()<combinedRetryAt)return;const now=performance.now(),fen=game.fen();const p=combinedPhoto,z=combinedZen;
+ // The photograph must be a fresh stable observation of this exact prior FEN.
+ if(!p||p.fen!==fen||now-p.at>1100)return;const currentZ=z&&z.fen===fen&&now-z.at<1100?z:null;
+ // Photo-only evidence may still populate manual choices if Zen has no result.
+ const rows=combinedRank(game.moves({verbose:true}),currentZ,p),best=rows[0],second=rows[1];if(!best)return;
+ const pbest=p.rows[0],pnext=p.rows[1];const photoStrong=!!pbest&&pbest.d===0&&p.none>pbest.d&&pbest.visual>=p.cut&&(!pnext||pnext.d>pbest.d||pbest.visual-pnext.visual>=Math.max(4,pbest.visual*.25));
+ const zenStrong=currentZ?.verified===best.key;const photoSupports=best.p&&best.p.visual>=p.cut&&best.p.d<=1&&p.none>best.p.d;
+ const zenSupports=best.z!==undefined&&best.z>=9&&best.z>=(currentZ?.rows?.[0]?.score||0)-5;
+ const margin=best.percent-(second?.percent||0),jointStrong=photoSupports&&(zenStrong||(photoStrong&&moveKey(pbest.m)===best.key&&zenSupports));
+ const pending={fen,pixels:p.pixels};const signature=fen+'|'+best.key+'|'+(currentZ?.verified||'')+'|'+(photoStrong?moveKey(pbest.m):'uncertain');
+ if(!combinedProposal||combinedProposal.signature!==signature){combinedProposal={signature,at:now};return;}const elapsed=now-combinedProposal.at;if(elapsed<350)return;
+ const summary=combinedSummary(currentZ,p);$('decisionStatus').textContent=summary;
+ if($('combinedResolve').value==='manual'){showCombinedChoices(rows,pending,summary);return;}
+ if(jointStrong&&best.percent>=55&&margin>=15){combinedCommit(best,pending,false);return;}
+ if(elapsed>=1800)showCombinedChoices(rows,pending,summary+' · Automatic resolution uncertain; choose manually.');
+}
+function selectedRecStep(){const method=$('decisionMode').value;if(method==='zen')recStep();else if(method==='photo')photoStep();else if(!combinedPending){recStep();photoStep();resolveCombined();}}
+$('combinedRetry').onclick=()=>{resetCombined();pendingVerification=null;combinedRetryAt=performance.now()+700;msg('Waiting for another stable observation. No move recorded.');};
+$('combinedResolve').onchange=()=>{resetCombined();pendingVerification=null;};
+$('decisionMode').onchange=()=>{const method=$('decisionMode').value;$('photoPanel').hidden=method==='zen';$('combinedControls').hidden=method!=='combined';resetTracking();$('decisionStatus').textContent=method==='zen'?'Zen Scanner decides moves independently.':method==='photo'?'Photo occupancy decides independently. Match the physical board to the last confirmed position.':'Combined mode: both detectors compare against the same confirmed FEN.';};
 $('savePhoto640').onclick=()=>{const a=document.createElement('a');a.href=photoCanvas.toDataURL('image/jpeg',.92);a.download='chess_board.jpg';a.click();};
 
 function recStep(){
@@ -970,7 +1012,7 @@ function recStep(){
  prevF=raw;
  // Do not reset the timer for mild camera noise, auto-exposure or shadows.
  const bigMotion=median(motion)>9 || motion.filter(x=>x>18).length>13;
- if(bigMotion){
+ if(bigMotion){if($("decisionMode").value==="combined")combinedZen=null;
   motionAt=now;quietCount=0;clearSettled();pendingVerification=null;proposal='';proposalCount=0;
   if(now-uncertainAt>1200){msg('Movement detected. Waiting until pieces and hands are still…');uncertainAt=now}
   return;
@@ -997,8 +1039,8 @@ function recStep(){
  const photoNow=photographDifference(acceptedFlatPixels,latestFlatPixels);
  const photoBase=median(Array.from(photoNow));
  const photoActive=Array.from(photoNow).filter(v=>v>Math.max(2.4,photoBase*2.3)).length;
- if(!changed&&photoActive<2){pendingVerification=null;proposal='';proposalCount=0;return}
- if(changed>20){
+ if(!changed&&photoActive<2){if($("decisionMode").value==="combined")combinedZen=null;pendingVerification=null;proposal='';proposalCount=0;return}
+ if(changed>20){if($("decisionMode").value==="combined")combinedZen=null;
   pendingVerification=null;proposal='';proposalCount=0;
   if(now-uncertainAt>2000){msg('Board changed widely (shadow, hand or camera movement). Waiting.');uncertainAt=now}
   return;
@@ -1026,6 +1068,7 @@ function recStep(){
   ranked.push({...c,score});
  }
  ranked.sort((x,y)=>y.score-x.score);
+ if($("decisionMode").value==="combined"){combinedZen={fen:game.fen(),at:now,rows:ranked,verified:null};}
  const best=ranked[0],next=ranked[1];
  const confidence=best?best.score-(next?.score||0):0;
  let selected=best,selectedConfidence=confidence;
@@ -1055,6 +1098,7 @@ function recStep(){
   }else{
    // Last resort: identify a physical (possibly illegal) move from a
    // disappearing occupied source and changed destination.
+   if($("decisionMode").value==="combined"){pendingVerification=null;return;}
    const nonstandard=physicalMoveCandidates(averaged,latestFlatPixels);
    const first=nonstandard[0],second=nonstandard[1];
    if(first&&first.score>=22&&first.score-(second?.score||0)>=Math.max(10,first.score*.25)){
@@ -1113,6 +1157,7 @@ function recStep(){
   return;
  }
  const snapshot=new Uint8ClampedArray(latestFlatPixels);
+ if($("decisionMode").value==="combined"){if(combinedZen){combinedZen.verified=moveKey(x);combinedZen.verifiedMove=x;if(!combinedZen.rows.some(r=>r.key===selected.key))combinedZen.rows.push(selected);}return;}
  if(x.promotion){requestPromotion(x,averaged,snapshot);return;}
  finishMove(x,averaged,snapshot);
 }
