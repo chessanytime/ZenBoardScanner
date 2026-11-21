@@ -164,7 +164,7 @@ for(let q=0;q<64;q++){for(let k=0;k<48;k++)A[q*K+k]=Math.min(255,F[q*K+k]*g);A[q
 function startSearch(m){mode=m||'search';found=0;lastQ=null;t0=Date.now();st(1,m=='manual'?'drag corners, then Lock':'searching…');st(2,'waiting');st(3,'waiting');st(4,'waiting');prog(0);
 msg(m=='manual'?'Drag the 4 white dots onto the board corners, then tap “Lock border now”.':'Searching for the board… hold steady, all 4 corners in view. You can also drag the dots yourself.')}
 function extOut(){const H=hom([[0,0],[8,0],[8,8],[0,8]],rq());return[[-1,-1],[9,-1],[9,9],[-1,9]].some(p=>{const[x,y]=ap(H,p[0],p[1]);return x<0||y<0||x>O.width||y>O.height})}
-function lock(a){occModelReady=false;occModel=null;mode='scan';n=0;acc=null;colorChk=0;st(1,'locked ✓','ok');st(2,'scanning…');prog(0);msg('Border locked. Keep the board EMPTY – scanning squares…'+(extOut()?'  ⚠ The blue dashed capture area goes outside the picture – move the camera back a little so it fits.':''));a?foundSnd():beep(660,.12,.45)}
+function lock(a){comboStartReset();occModelReady=false;occModel=null;mode='scan';n=0;acc=null;colorChk=0;st(1,'locked ✓','ok');st(2,'scanning…');prog(0);msg('Border locked. Keep the board EMPTY – scanning squares…'+(extOut()?'  ⚠ The blue dashed capture area goes outside the picture – move the camera back a little so it fits.':''));a?foundSnd():beep(660,.12,.45)}
 function detectByContours(){
  if(!(window.cv&&cv.Mat&&cv.findContours))return null;
  let src,gray,blur,edges,contours,hierarchy;
@@ -262,7 +262,7 @@ function scanStep(){const F=warp();acc=acc||new Float32Array(F.length);for(let i
 if(n<6)return;base=acc.map(v=>v/6);const L=[];let m=0;for(let q=0;q<64;q++){L[q]=lum(base,q);m+=L[q]/64}let c=0;for(let q=0;q<64;q++){const r=q>>3,f=q&7;c+=Math.sign(L[q]-m)*(((f+r)&1)?-1:1)}
 if(c<-20){rot=(rot+1)%4;$('viewSide').value=String(rot);n=0;acc=null;msg('Board turned 90° – rescanning…');return}
 if(c<20){msg('Board border detected; square colors have low contrast. Continuing with image-based calibration.');}
-st(2,'64/64 ✓','ok');mode='pieces';lastOk=0;ready=0;pst=0;prevF=null;thrQ=null;forceStart=0;st(3,'place pieces at start position');prog(0);msg('EMPTY BOARD LEARNED ✓  Now place all pieces in the standard start position (White at the bottom) and keep your hands away.');buzzer()}
+st(2,'64/64 ✓','ok');comboStartReset();mode='pieces';lastOk=0;ready=0;pst=0;prevF=null;thrQ=null;forceStart=0;st(3,'place pieces at start position');prog(0);msg('EMPTY BOARD LEARNED ✓  Now place all pieces in the standard start position (White at the bottom) and keep your hands away.');buzzer()}
 function pieceStep(){const F=adj(warp());if(!prevF){prevF=F;return}
 let g=0;for(let q=0;q<64;q++)g+=sd(F,prevF,q);g/=64;prevF=F;
 const E=q=>{const r=q>>3;return r<2||r>5},d=[],emD=[];let mo=0;
@@ -1118,7 +1118,7 @@ $('b1').onclick=cam;
 $('b2').onclick=()=>{if(stream)startSearch()};
 $('b3').onclick=()=>{if(stream&&(mode=='search'||mode=='manual'))lock(false)};
 $('viewSide').onchange=e=>{rot=Number(e.target.value);if(stream&&quad){mode='scan';n=0;acc=null;refF=null;prevF=null;msg('Camera side selected. Clear the board temporarily to recalibrate empty squares.');}};
-$('b5').onclick=()=>{if(mode=='pieces'){forceStart=1;pst=Math.max(pst,4);msg('Starting with the current view…');return}refF=null;prevF=null;stable=0;unclear=0;resetTracking();msg('Resynced – make sure the real board matches the on-screen position, then make your next move.')};
+$('b5').onclick=()=>{if(mode=='pieces'){comboStartPhoto(true);return}refF=null;prevF=null;stable=0;unclear=0;resetTracking();msg('Resynced – make sure the real board matches the on-screen position, then make your next move.')};
 $('redoRecording').onclick=()=>{
  if(!stream||!base||!quad||!['pieces','rec'].includes(mode)){
   msg('First finish empty-board calibration and lock the board. Re Do Recording keeps that calibration.');return;
@@ -1126,7 +1126,7 @@ $('redoRecording').onclick=()=>{
  // Preserve the calibrated empty squares, locked corners and camera selection.
  // Discard the old game and re-verify the physical standard starting position.
  newGame();$('pgnbox').value='';$('pgnbox').style.display='none';
- mode='pieces';ready=0;colorChk=1;pst=0;prevF=null;refF=null;resetTracking();
+ comboStartReset();mode='pieces';ready=0;colorChk=1;pst=0;prevF=null;refF=null;resetTracking();
  thrQ=null;forceStart=0;stable=0;unclear=0;lastOk=0;Nz=1.5;
  st(1,'locked ✓','ok');st(2,'64/64 ✓','ok');
  st(3,'checking starting position…');st(4,'waiting');prog(0);
@@ -1401,6 +1401,7 @@ const Logic = (() => {
 
 const labSize=640,labRaw=document.createElement('canvas'),labRawCtx=labRaw.getContext('2d',{willReadFrequently:true});
 let labReference=null,labFen=null,labLastPhoto=null,labMode='',labLastCheck=0,labLastObservation=null,labObservationSince=0;
+let comboStartupAt=0,comboStartupKey='',comboStartupSince=0,comboStartupRot=-1;
 let comboZen=null,comboZenRanked=[],comboZenRankAt=0,comboPhoto=null,comboDisputeAt=0,comboPending=null,comboGeometry='',comboCooldown=0;
 const labUI=t=>$('labStatus').textContent=t;
 const comboKey=m=>m.from+m.to;
@@ -1420,7 +1421,7 @@ function labDraw(id,pixels){const can=$ (id),ctx=can.getContext('2d');ctx.putIma
 function labFingerprint(p,size){const a=new Float32Array(64*16);let n=0;for(let r=0;r<8;r++)for(let c=0;c<8;c++)for(let y=1;y<=4;y++)for(let x=1;x<=4;x++){const px=Math.floor((c+x/5)*size/8),py=Math.floor((r+y/5)*size/8),i=(py*size+px)*4;a[n++]=(p[i]+p[i+1]+p[i+2])/3;}return a;}
 function labDifference(a,b){if(!a||!b)return Infinity;let mean=0;for(let i=0;i<a.length;i++)mean+=a[i]-b[i];mean/=a.length;let sum=0;for(let i=0;i<a.length;i++)sum+=Math.abs(a[i]-b[i]-mean);return sum/a.length;}
 function labObs(p){const threshold=Math.max(.1,Math.min(2,Number($('labThreshold').value)||.5));const {grid,scores}=Logic.classicalGrid(p,640,threshold);return {grid,scores,occ:Logic.gridToOcc(grid,'bottom')};}
-function labRenderObs(obs){const dst=$('labGrid'),expected=Logic.occFromChess(game);dst.replaceChildren();for(let r=0;r<8;r++)for(let c=0;c<8;c++){const q=r*8+c,i=Logic.cellToSq(r,c,'bottom'),el=document.createElement('div');el.textContent=Logic.sqName(i);el.title='Occupancy score '+obs.scores[q].toFixed(2);el.style.cssText='padding:5px 0;text-align:center;font-size:10px;border-radius:3px;background:'+(obs.grid[q]?'#247e63':'#273345')+';border:1px solid '+(obs.occ[i]!==expected[i]?'#ff777e':'transparent');dst.append(el);}}
+function labRenderObs(obs,board=game){const dst=$('labGrid'),expected=Logic.occFromChess(board);dst.replaceChildren();for(let r=0;r<8;r++)for(let c=0;c<8;c++){const q=r*8+c,i=Logic.cellToSq(r,c,'bottom'),el=document.createElement('div');el.textContent=Logic.sqName(i);el.title='Occupancy score '+obs.scores[q].toFixed(2);el.style.cssText='padding:5px 0;text-align:center;font-size:10px;border-radius:3px;background:'+(obs.grid[q]?'#247e63':'#273345')+';border:1px solid '+(obs.occ[i]!==expected[i]?'#ff777e':'transparent');dst.append(el);}}
 
 function comboReportZen(m,score,gap,features,pixels){comboZen={m,score,gap,features,pixels,fen:game.fen(),at:performance.now()};$('zenResult').textContent=m.san;$('zenEvidence').textContent='Verified · score '+score.toFixed(1)+' · lead '+gap.toFixed(1);}
 function comboBaseline(p,fp,confirmedByUser=false){
@@ -1504,6 +1505,43 @@ function comboResolve(){
  }
  comboAsk(candidates,why);
 }
+
+/* Starting position can be verified independently by the photo detector.
+   The original Zen motion gate must not block photo verification. */
+function comboStartReset(){comboStartupAt=0;comboStartupKey='';comboStartupSince=0;comboStartupRot=-1;}
+function comboStartPhoto(force=false){
+ if(mode!=='pieces'||!base||!quad||!stream)return;
+ const now=performance.now();
+ if(!force&&now-comboStartupAt<450)return;
+ comboStartupAt=now;
+ if(comboStartupRot!==rot){comboStartupRot=rot;comboStartupKey='';comboStartupSince=0;}
+ const p=labPhoto(640,true);
+ if(!p){labUI('Cannot refine the board photo. Check all four corners.');return;}
+ const obs=labObs(p),startBoard=new Chess(),expected=Logic.occFromChess(startBoard),none=Logic.dist(expected,obs.occ);
+ const occupied=obs.occ.reduce((n,x)=>n+x,0);
+ const correct=obs.occ.reduce((n,x,i)=>n+(x&&expected[i]?1:0),0);
+ labLastPhoto=p;labDraw('labCurrent',p);labRenderObs(obs,startBoard);
+ $('photoResult').textContent=correct+'/32';
+ $('photoEvidence').textContent=none+' square mismatches';
+ $('zenResult').textContent='Calibrated';
+ $('zenEvidence').textContent='Empty-board reference captured';
+ st(3,'Photo: '+correct+'/32 pieces');st(4,'waiting');prog(Math.min(.95,correct/32));
+ const key=Array.from(obs.occ).join('');
+ if(key!==comboStartupKey){comboStartupKey=key;comboStartupSince=now;}
+ if(!force&&none!==0){labUI('Detected '+occupied+' occupied squares; '+none+' differ from the starting position. Adjust threshold, light or framing if needed.');if(correct>=24)msg('Checking starting pieces — '+correct+'/32. Keep hands away.');return;}
+ if(!force&&now-comboStartupSince<Math.max(500,Number($('labDelay').value)||500)){msg('All 32 starting pieces detected. Verifying a second photo…');labUI('Waiting for a stable starting-position photo.');return;}
+ if(force&&none!==0&&!confirm('Photo detection disagrees on '+none+' squares. Confirm only if all 32 pieces are set correctly and all other squares are empty.'))return;
+ newGame();mode='rec';forceStart=0;Nz=1.5;resetTracking();
+ labMode='rec';comboGeometry=JSON.stringify(rq());
+ comboBaseline(p,labFingerprint(p,640),none!==0);
+}
+function comboStartStep(){
+ // Keep Zen's normal piece recognition, but independently test occupancy
+ // even if Zen is stuck on its original motion or contrast threshold.
+ pieceStep();
+ if(mode==='pieces')comboStartPhoto(false);
+}
+
 function comboStep(){
  if(mode!==labMode){labMode=mode;labReset();}
  if(mode!=='rec'||!game||game.game_over())return;
@@ -1515,14 +1553,14 @@ function comboStep(){
  if(now-labLastCheck>=450){labLastCheck=now;comboPhotoAnalyze();}
  comboResolve();
 }
-$('labCapture').onclick=()=>{if(mode!=='rec')return;comboClear();labLastCheck=0;comboPhotoAnalyze();labUI('Analyzing both detectors. Keep hands away.');};
-$('labBaseline').onclick=()=>{if(comboPending)return;if(labReference&&!confirm('Replace both reference images with the current recorded board position?'))return;labLastObservation=null;const p=labPhoto(640,true);if(p&&game){labLastObservation=Array.from(labObs(p).occ).join('');comboPhotoAnalyze(true);}};
+$('labCapture').onclick=()=>{if(mode==='pieces'){comboStartupAt=0;comboStartPhoto(false);return;}if(mode!=='rec')return;comboClear();labLastCheck=0;comboPhotoAnalyze();labUI('Analyzing both detectors. Keep hands away.');};
+$('labBaseline').onclick=()=>{if(mode==='pieces'){comboStartPhoto(true);return;}if(comboPending)return;if(labReference&&!confirm('Replace both reference images with the current recorded board position?'))return;labLastObservation=null;const p=labPhoto(640,true);if(p&&game){labLastObservation=Array.from(labObs(p).occ).join('');comboPhotoAnalyze(true);}};
 $('labDownload').onclick=()=>{if(!labLastPhoto)return;const a=document.createElement('a');a.href=$('labCurrent').toDataURL('image/jpeg',.92);a.download='zen-board-photo.jpg';a.click();};
-$('labThreshold').onchange=()=>{comboClear();labLastCheck=0;};
+$('labThreshold').onchange=()=>{comboClear();labLastCheck=0;comboStartReset();};
 $('resolveAuto').onchange=()=>{if(comboPending){comboPending=null;$('labCandidates').replaceChildren();comboDisputeAt=performance.now()-2200;comboResolve();}};
 $('resolveUser').onchange=()=>{};
 $('recoverBtn').onclick=()=>{comboClear();labLastCheck=0;labUI('Both detectors rescanning the last confirmed position.');};
-const loop=()=>{if(mode!=='rec'&&labMode==='rec'){labMode=mode;labReset();}const t=Date.now();if(stream&&V.videoWidth&&W.width){wc.drawImage(V,0,0,W.width,W.height);try{({search:searchStep,scan:scanStep,pieces:pieceStep,rec:comboStep}[mode]||(()=>{}))()}catch(e){console.error(e)}}
+const loop=()=>{if(mode!=='rec'&&labMode==='rec'){labMode=mode;labReset();}const t=Date.now();if(stream&&V.videoWidth&&W.width){wc.drawImage(V,0,0,W.width,W.height);try{({search:searchStep,scan:scanStep,pieces:comboStartStep,rec:comboStep}[mode]||(()=>{}))()}catch(e){console.error(e)}}
 setTimeout(loop,Math.max(20,(mode=='rec'?65:250)-(Date.now()-t)))};loop();
 requestAnimationFrame(draw);
 </script></body></html>
