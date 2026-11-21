@@ -1,0 +1,1148 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Zen Scanner • Camera Lab</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<style>
+:root{color-scheme:dark;--bg:#0c111b;--fg:#eef2f8;--card:#151e2b;--mut:#9ba9bd;--ok:#5ee1ad;--bad:#ff777e;--ac:#55ddb1;--line:#2b384a}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(ellipse at 50% 0,#1b3040 0,transparent 45%),var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif;padding:max(18px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left));max-width:1120px;margin-inline:auto}
+header{display:flex;align-items:center;gap:12px;margin:0 0 22px}.brandmark{display:grid;place-items:center;width:48px;height:48px;border:1px solid #4bd5ad77;border-radius:15px;background:#143d3b;color:#69e5bb;font:32px Georgia,serif;flex:none}h1{font-size:23px;letter-spacing:-.8px;line-height:1.15;margin:0}.eyebrow{font-size:10px;font-weight:800;color:var(--ac);letter-spacing:1.6px;text-transform:uppercase}.subtitle{font-size:12px;color:var(--mut);margin-top:3px}.local{margin-left:auto;border:1px solid var(--line);color:var(--mut);border-radius:99px;padding:5px 9px;font-size:10px;white-space:nowrap}
+.workspace{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,340px);gap:16px;align-items:start}.stack{display:grid;gap:14px;min-width:0}.panel{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;min-width:0;box-shadow:0 6px 22px #0002}.panel h2{font-size:14px;margin:0 0 12px;letter-spacing:.2px}.panel-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}.panel-top h2{margin:0}.tag{font-size:10px;color:var(--mut);border:1px solid var(--line);border-radius:99px;padding:4px 8px;white-space:nowrap}
+#stage{position:relative;background:#080c13;border:1px solid var(--line);border-radius:12px;overflow:hidden;min-height:180px}#stage.active{min-height:0}#stage:not(.active)::before{content:"Camera preview • Start camera below";position:absolute;inset:0;display:grid;place-items:center;font-size:13px;color:var(--mut);pointer-events:none}#v{display:block;width:100%;height:auto}#ov{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+#msg{font-weight:600;font-size:13px;line-height:1.5;margin:12px 0 8px;min-height:38px}#barw{height:5px;background:#2b384a;border-radius:8px;overflow:hidden}#bar{height:100%;background:var(--ac);width:0;transition:width .2s}#modelStatus{display:block;margin-top:8px;font-size:11px}
+.row,.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.actions>*{flex:1 1 42%}.primary-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}.primary-actions #b1{grid-column:1/-1}
+button,select,input,textarea{font:inherit}button,select.camera-select,input{min-width:0;border:1px solid var(--line);border-radius:10px;background:#202b3a;color:var(--fg);padding:11px 10px;font-size:13px;font-weight:600;min-height:44px}button{cursor:pointer;transition:background .15s,transform .15s}button:hover{background:#2c3b4d}button:active{transform:scale(.98)}button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--ac);outline-offset:2px}button:disabled{opacity:.45;cursor:not-allowed}button.p{background:var(--ac);color:#09271f;border-color:var(--ac);font-weight:800}button.p:hover{background:#83ebc9}#b1{font-size:16px;min-height:50px}#redoRecording{background:#202b3a;color:var(--fg);border-color:var(--line)}#b12{width:100%;margin-top:10px}
+.steps{list-style:none;padding:0;margin:0;display:grid;gap:10px;counter-reset:step}.steps li{display:flex;align-items:center;gap:9px;font-size:12px;counter-increment:step}.steps li::before{content:counter(step);width:24px;height:24px;display:grid;place-items:center;border:1px solid var(--line);border-radius:50%;font-size:11px;font-weight:800;color:var(--mut);flex:none}.steps li b{margin-left:auto;font-size:11px;text-align:right}b.ok{color:var(--ok)}b.bad{color:var(--bad)}b{color:var(--mut)}
+small,.help{color:var(--mut);font-size:12px}.help{margin:10px 0 0;line-height:1.55}.move-label{font-size:10px;text-transform:uppercase;letter-spacing:1.3px;color:var(--mut);font-weight:700}#last{font-size:32px;font-weight:800;letter-spacing:-1px;color:var(--ac);margin:0 0 10px;min-height:45px}#moves{background:#0e1621;border-radius:10px;border:1px solid var(--line);padding:10px;min-height:78px;max-height:220px;overflow:auto;word-break:break-word;font:14px/1.8 ui-monospace,monospace}#manualMove{width:100%;flex:1 1 100%;min-width:0!important}#manualMove::placeholder{color:#8e9caf}#pgnbox,#illegalFenBox{width:100%;height:100px;margin-top:10px;background:#0e1621;color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px;font:12px monospace}#pgnbox{display:none}#exportIllegalFen{width:100%;margin-top:10px}
+details.panel{padding:0}details>summary{padding:15px 16px;cursor:pointer;list-style:none;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:space-between}details>summary::-webkit-details-marker{display:none}details>summary::after{content:"+";color:var(--ac);font-size:20px;line-height:1}details[open]>summary::after{content:"−"}details[open]>summary{border-bottom:1px solid var(--line)}.detail-body{padding:0 16px 16px}.field{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--mut);flex:1 1 42%;min-width:0}.field input,.field select{width:100%;max-width:none!important}.cv{display:grid;grid-template-columns:1fr 1fr;gap:10px}.cv figure{margin:0;min-width:0}figcaption{color:var(--mut);font-size:11px;margin-bottom:6px}canvas.sq{display:block;width:100%;max-width:320px;border-radius:8px;background:#0e1621}
+#promotionPrompt{display:none;position:fixed;inset:0;z-index:1000;background:#000c;align-items:center;justify-content:center;padding:16px}#promotionPrompt.open{display:flex}#promotionPanel{width:min(100%,460px);padding:20px;background:var(--card);border:2px solid var(--ac);border-radius:14px;text-align:center;box-shadow:0 12px 50px #0008}#promotionChoices{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}#promotionChoices button{font-size:18px;padding:16px 8px}
+@media(max-width:760px){body{padding-left:12px;padding-right:12px}.workspace{grid-template-columns:1fr;gap:12px}.stack{display:contents}.camera-panel{order:0}.steps-panel{order:1}.record-panel{order:2}.setup-panel{order:3}.player-panel{order:4}.diagnostics-panel{order:5}header{margin-bottom:15px}.panel{padding:13px;border-radius:15px}.local{display:none}.cv{grid-template-columns:1fr 1fr}h1{font-size:21px}}
+.lab-nav{margin:-8px 0 16px}.lab-nav a{display:inline-flex;align-items:center;color:var(--ac);text-decoration:none;font-size:13px;font-weight:700;border:1px solid var(--line);border-radius:9px;padding:9px 12px;background:var(--card)}
+</style></head><body>
+<header><div class="brandmark" aria-hidden="true">♞</div><div><div class="eyebrow">Zen Mind Chess Academy</div><h1>Camera Lab</h1><div class="subtitle">Experimental move detection · independent test page</div></div><span class="local">TEST LAB</span></header>
+<nav class="lab-nav"><a href="index.html">← Main scanner</a></nav><main class="workspace">
+<div class="stack">
+<section class="panel camera-panel"><div class="panel-top"><h2>Board camera</h2><span class="tag">LIVE VIEW</span></div>
+<div id="stage"><video id="v" playsinline muted autoplay></video><canvas id="ov"></canvas></div>
+<div id="msg" role="status" aria-live="polite">Start camera with an empty board and all four corners visible.</div><div id="barw"><div id="bar"></div></div><small id="modelStatus">Occupancy model: waiting for calibrated starting position</small>
+<div class="row"><label class="field">Board orientation<select id="viewSide" class="camera-select" aria-label="Camera board orientation"><option value="0">Camera: White side</option><option value="1">Camera: right side</option><option value="2">Camera: Black side</option><option value="3">Camera: left side</option></select></label></div><div class="primary-actions"><button class="p" id="b1">Start camera</button><button id="b2">Auto-detect board</button><button id="b3">Lock border</button></div></section>
+<section class="panel steps-panel"><h2>Setup progress</h2><ol class="steps"><li>Detect board border <b id="s1">waiting</b></li><li>Scan empty squares <b id="s2">waiting</b></li><li>Verify starting position <b id="s3">waiting</b></li><li>Record moves <b id="s4">waiting</b></li></ol></section>
+<details class="panel setup-panel"><summary>Camera &amp; recording settings</summary><div class="detail-body"><div class="row"><label class="field">Camera device<select id="cameraSelect" class="camera-select" aria-label="Choose smartphone camera"><option value="">Camera: auto (rear)</option></select></label></div><div class="actions"><button id="b8">Switch camera</button><button id="flashBtn" disabled>Flash: unavailable</button><button id="b9">Sound: on</button><button id="b11">Announce moves: on</button></div><p class="help">Mount the camera above the board. Keep all corners visible. Drag the corner handles if detection is incorrect, then lock the border. Recalibrate after moving the camera.</p></div></details>
+<details class="panel diagnostics-panel"><summary>Detection diagnostics</summary><div class="detail-body"><div class="actions"><button id="b15">Yellow diagnostics: off</button><button id="cvToggle">OpenCV: loading…</button></div><div class="cv" style="margin-top:12px"><figure><figcaption>Detected position</figcaption><canvas class="sq" id="pos" width="240" height="240"></canvas></figure><figure><figcaption>Flattened board</figcaption><canvas class="sq" id="flat" width="320" height="320"></canvas></figure></div><p class="help">Red: expected piece missing. Orange: unexpected piece.</p></div></details>
+</div>
+<div class="stack">
+<section class="panel record-panel"><div class="panel-top"><h2>Experimental capture</h2><span class="tag">READY FOR INTEGRATION</span></div><p class="help">This page uses the original camera, board detection and calibration system. The existing scanner remains available below as a reference. The alternative photo-capture logic will be integrated here.</p><hr style="border:0;border-top:1px solid var(--line);margin:16px 0"><div class="panel-top"><h2>Reference scanner</h2><span class="tag">PGN</span></div><div class="move-label">Last move</div><div id="last">—</div><div id="moves">Recorded moves will appear here</div><div class="actions"><input id="manualMove" placeholder="Enter move: e4, Nf3, e2e4" aria-label="Manual chess move"><button id="addManualMove">Add move</button><button id="deleteLastMove">Undo move</button><button id="b5">Resync board</button><button id="recoverBtn">Recover missed move</button><button id="redoRecording" class="p">Restart recording</button></div><button id="b12" class="p">Export PGN file</button><textarea id="pgnbox" readonly></textarea><textarea id="illegalFenBox" readonly style="display:none" aria-label="Illegal move FEN positions"></textarea><button id="exportIllegalFen" style="display:none">Export illegal-move FEN</button><p class="help">Enter SAN or coordinate moves. Coordinate notation also supports recording physically played illegal moves.</p></section>
+<details class="panel player-panel"><summary>Player details (optional)</summary><div class="detail-body"><div class="row"><label class="field">White player<input id="whiteName" placeholder="Name"></label><label class="field">Black player<input id="blackName" placeholder="Name"></label></div></div></details>
+</div></main>
+<div id="promotionPrompt" role="dialog" aria-modal="true" aria-labelledby="promotionTitle">
+<div id="promotionPanel"><h2 id="promotionTitle">Pawn promotion</h2>
+<p id="promotionMessage">Choose a piece within 3 seconds.</p>
+<div id="promotionChoices"><button data-promote="q">Queen</button><button data-promote="r">Rook</button><button data-promote="n">Knight</button><button data-promote="b">Bishop</button></div>
+</div></div>
+
+<script async src="https://docs.opencv.org/4.x/opencv.js" onload="window.cvScriptLoaded=true" onerror="window.cvScriptFailed=true"></script>
+<script>
+if(typeof Chess==='undefined')document.getElementById('msg').textContent='chess.js failed to load. Check your internet connection and reload.';
+const $=i=>document.getElementById(i),V=$('v'),O=$('ov'),oc=O.getContext('2d'),W=document.createElement('canvas'),wc=W.getContext('2d',{willReadFrequently:true}),FL=$('flat'),fc=FL.getContext('2d'),PG=$('pos'),pc=PG.getContext('2d');
+const S=256,Q=32,msg=t=>$('msg').textContent=t,st=(i,t,c)=>{const e=$('s'+i);e.textContent=t;e.className=c||''},prog=p=>$('bar').style.width=Math.round(p*100)+'%';
+let stream,facing='environment',ac,snd=true,mode='idle',quad,rot=0,found=0,lastQ,t0=0,lt=0,base,thr=30,game,prevF,refF,stable=0,ready=0,unclear=0,sc=1,n=0,acc,lastOk=0,colorChk=0,pst=0,thrQ=null,forceStart=0;const K=49,M=32,SW=320;let Nz=1.5,voice=true;
+
+/* ---------- sound ---------- */
+function beep(f,d=.1,v=.25,t='sine',at=0){if(!snd||!ac)return;const o=ac.createOscillator(),g=ac.createGain(),s=ac.currentTime+at;o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,s);g.gain.exponentialRampToValueAtTime(.001,s+d);o.connect(g);g.connect(ac.destination);o.start(s);o.stop(s+d+.02)}
+const buzzer=()=>{beep(150,.35,.9,'sawtooth');beep(150,.35,.9,'sawtooth',.5);beep(150,.6,.9,'sawtooth',1)},capSnd=()=>{beep(260,.07,.7,'square');beep(120,.16,.8,'square',.06)},tick=p=>beep(380+560*p,.09,.3),foundSnd=()=>{beep(660,.1,.45);beep(880,.14,.45,'sine',.12)},readySnd=()=>[523,659,784,1047,1047].forEach((f,i)=>beep(f,.22,.95,'square',i*.17));
+
+/* ---------- geometry ---------- */
+function hom(Sx,D){const A=[];for(let i=0;i<4;i++){const[x,y]=Sx[i],[u,v]=D[i];A.push([x,y,1,0,0,0,-u*x,-u*y,u],[0,0,0,x,y,1,-v*x,-v*y,v])}
+for(let c=0;c<8;c++){let p=c;for(let r=c+1;r<8;r++)if(Math.abs(A[r][c])>Math.abs(A[p][c]))p=r;[A[c],A[p]]=[A[p],A[c]];for(let r=0;r<8;r++)if(r!=c){const k=A[r][c]/A[c][c];for(let j=c;j<9;j++)A[r][j]-=k*A[c][j]}}
+return A.map((r,i)=>Math.abs(r[i])<1e-10?NaN:r[8]/r[i])}
+const ap=(h,x,y)=>{const z=h[6]*x+h[7]*y+1;return[(h[0]*x+h[1]*y+h[2])/z,(h[3]*x+h[4]*y+h[5])/z]};
+const rq=()=>[0,1,2,3].map(i=>quad[(i+rot)%4]);
+
+/* ---------- automatic board finder (checkerboard X-corners) ---------- */
+function detect(){const w=W.width,h=W.height,d=wc.getImageData(0,0,w,h).data,g=new Float32Array(w*h),I=new Float64Array((w+1)*(h+1));
+for(let i=0;i<w*h;i++)g[i]=.299*d[i*4]+.587*d[i*4+1]+.114*d[i*4+2];
+for(let y=0;y<h;y++){let s=0;for(let x=0;x<w;x++){s+=g[y*w+x];I[(y+1)*(w+1)+x+1]=I[y*(w+1)+x+1]+s}}
+const bx=(x0,y0,x1,y1)=>(I[y1*(w+1)+x1]-I[y0*(w+1)+x1]-I[y1*(w+1)+x0]+I[y0*(w+1)+x0])/((x1-x0)*(y1-y0)),R=new Float32Array(w*h);let M=0;
+for(let y=8;y<h-8;y+=2)for(let x=8;x<w-8;x+=2){let best=0;for(const r of[3,6]){const a=bx(x-r,y-r,x,y),b=bx(x,y-r,x+r,y),c=bx(x-r,y,x,y+r),e=bx(x,y,x+r,y+r),s=Math.sign(a-b);
+if(!s||Math.sign(a-c)!=s||Math.sign(e-b)!=s||Math.sign(e-c)!=s)continue;
+const m=Math.min(Math.abs(a-b),Math.abs(a-c),Math.abs(e-b),Math.abs(e-c))-.5*Math.max(Math.abs(a-e),Math.abs(b-c));if(m>best)best=m}
+R[y*w+x]=best;if(best>M)M=best}
+const t=Math.max(10,.35*M),P=[];
+for(let y=8;y<h-8;y+=2)for(let x=8;x<w-8;x+=2){const v=R[y*w+x];if(v<t)continue;let ok=1;for(let j=-6;j<=6&&ok;j+=2)for(let i=-6;i<=6;i+=2)if(R[(y+j)*w+x+i]>v){ok=0;break}if(ok)P.push([x,y])}
+if(P.length<20)return null;
+const nn=P.map((p,i)=>{let m=1e9;P.forEach((q,j)=>{if(i!=j){const e=Math.hypot(p[0]-q[0],p[1]-q[1]);if(e<m)m=e}});return m}).sort((a,b)=>a-b),s=nn[nn.length>>1],
+par=P.map((_,i)=>i),f=i=>par[i]==i?i:par[i]=f(par[i]);
+for(let i=0;i<P.length;i++)for(let j=i+1;j<P.length;j++)if(Math.hypot(P[i][0]-P[j][0],P[i][1]-P[j][1])<1.6*s)par[f(i)]=f(j);
+const G={};P.forEach((p,i)=>(G[f(i)]=G[f(i)]||[]).push(p));
+const C=Object.values(G).sort((a,b)=>b.length-a.length)[0];if(C.length<20)return null;
+const ext=fn=>C.reduce((b,p)=>fn(p)<fn(b)?p:b),
+TL=ext(p=>p[0]+p[1]),BR=ext(p=>-p[0]-p[1]),TR=ext(p=>p[1]-p[0]),BL=ext(p=>p[0]-p[1]),inner=[TL,TR,BR,BL],
+u6=[[0,0],[6,0],[6,6],[0,6]],Hi=hom(inner,u6);
+let good=0;const cells=new Set();
+for(const p of C){const[u,v]=ap(Hi,p[0],p[1]);if(Math.abs(u-Math.round(u))<.2&&Math.abs(v-Math.round(v))<.2&&u>-.3&&v>-.3&&u<6.3&&v<6.3){good++;cells.add(Math.round(u)+','+Math.round(v))}}
+if(good/C.length<.7||cells.size<24)return null;
+const Hf=hom(u6,inner);
+return[[-1,-1],[7,-1],[7,7],[-1,7]].map(p=>{const[x,y]=ap(Hf,p[0],p[1]);return[x/sc,y/sc]})}
+
+/* ---------- warp + per-square features ---------- */
+let latestFlatPixels=null,acceptedFlatPixels=null;
+let lastGoodSnapshot=null; // immutable confirmed FEN + flattened photo + features
+
+function warp(){const q=rq().map(p=>[p[0]*sc,p[1]*sc]),H=hom([[M,M],[M+S,M],[M+S,M+S],[M,M+S]],q),w=W.width,h=W.height,d=wc.getImageData(0,0,w,h).data,o=fc.createImageData(SW,SW);
+for(let y=0;y<SW;y++)for(let x=0;x<SW;x++){const[a,b]=ap(H,x+.5,y+.5),xi=Math.min(w-1,Math.max(0,a|0)),yi=Math.min(h-1,Math.max(0,b|0)),i=(yi*w+xi)*4,j=(y*SW+x)*4;o.data[j]=d[i];o.data[j+1]=d[i+1];o.data[j+2]=d[i+2];o.data[j+3]=255}
+latestFlatPixels=new Uint8ClampedArray(o.data);fc.putImageData(o,0,0);fc.strokeStyle='rgba(255,255,255,.45)';fc.lineWidth=1;fc.strokeRect(M+.5,M+.5,S,S);fc.beginPath();for(let i=1;i<8;i++){fc.moveTo(M+i*Q+.5,M);fc.lineTo(M+i*Q+.5,M+S);fc.moveTo(M,M+i*Q+.5);fc.lineTo(M+S,M+i*Q+.5)}fc.stroke();
+if(cvEnabled&&cvReady){try{
+ const src=cv.matFromImageData(o),dst=new cv.Mat();
+ cv.GaussianBlur(src,dst,new cv.Size(3,3),0,0,cv.BORDER_DEFAULT);
+ const blurred=new Uint8ClampedArray(dst.data);
+ src.delete();dst.delete();return feats(blurred);
+ }catch(err){console.warn('OpenCV fallback:',err)}}
+ return feats(o.data)}
+/* per square: 4x4 blocks of RGB (centre area) + 1 texture value (edge energy) */
+function feats(d){
+ const F=new Float32Array(64*K);
+ const L=(x,y)=>{const i=(y*SW+x)*4;return .299*d[i]+.587*d[i+1]+.114*d[i+2]};
+ for(let r=0;r<8;r++)for(let f=0;f<8;f++){
+  const o=(r*8+f)*K,sx=M+f*Q,sy=M+r*Q;
+  // 28x28 pixels per square, including the piece's outer silhouette.
+  for(let by=0;by<4;by++)for(let bx=0;bx<4;bx++){
+   let a=0,b=0,c=0;
+   for(let y=0;y<7;y++)for(let x=0;x<7;x++){
+    const i=((sy+2+by*7+y)*SW+sx+2+bx*7+x)*4;
+    a+=d[i];b+=d[i+1];c+=d[i+2];
+   }
+   const k=o+(by*4+bx)*3;F[k]=a/49;F[k+1]=b/49;F[k+2]=c/49;
+  }
+  let edge=0,n=0;
+  for(let y=2;y<30;y++)for(let x=2;x<30;x++){
+   const X=sx+x,Y=sy+y,v=L(X,Y);
+   edge+=Math.abs(v-L(X+1,Y))+Math.abs(v-L(X,Y+1));n++;
+  }
+  F[o+48]=edge/n;
+ }
+ return F;
+}
+const sd=(A,B,q)=>{let s=0;const o=q*K;for(let i=o;i<o+48;i++)s+=Math.abs(A[i]-B[i]);return s/48+1.5*Math.abs(A[o+48]-B[o+48])},
+lum=(A,q)=>{let s=0;for(let i=q*K;i<q*K+48;i+=3)s+=.299*A[i]+.587*A[i+1]+.114*A[i+2];return s/16},
+flip180=A=>{const B=new Float32Array(A.length);for(let t=0;t<64;t++){for(let b=0;b<16;b++)for(let k=0;k<3;k++)B[t*K+b*3+k]=A[(63-t)*K+(15-b)*3+k];B[t*K+48]=A[(63-t)*K+48]}return B},
+/* remove global brightness/exposure drift using the 24 squares that changed least */
+adj=F=>{const d=[];for(let q=0;q<64;q++)d.push([sd(F,base,q),q]);d.sort((a,b)=>a[0]-b[0]);let sb=0,sf=0;
+for(let i=0;i<24;i++){const q=d[i][1];for(let k=0;k<48;k++){sb+=base[q*K+k];sf+=F[q*K+k]}}
+const g=Math.max(.7,Math.min(1.4,sb/(sf||1))),A=new Float32Array(F.length);
+for(let q=0;q<64;q++){for(let k=0;k<48;k++)A[q*K+k]=Math.min(255,F[q*K+k]*g);A[q*K+48]=F[q*K+48]}return A},
+nm=q=>'abcdefgh'[q&7]+(8-(q>>3));
+
+/* ---------- game helpers ---------- */
+const newGame=()=>{game=new Chess();physicalMoveLog=[];hasIllegalMoves=false;showMoves()},
+occ=g=>g.board().flat().map(x=>!!x),
+sq=s=>(8-parseInt(s[1]))*8+'abcdefgh'.indexOf(s[0]),
+U={p:'♟',n:'♞',b:'♝',r:'♜',q:'♛',k:'♚'};
+function showMoves(){const h=game?game.history():[];let o='';for(let i=0;i<h.length;i+=2)o+='<div>'+((i/2+1)|0)+'. '+h[i]+(h[i+1]?'&nbsp;&nbsp;'+h[i+1]:'')+'</div>';const M=$('moves');if(hasIllegalMoves)o=physicalMoveLog.map((x,i)=>'<div>'+(i%2===0?(Math.floor(i/2)+1)+'. ':'')+x.label+'</div>').join('');M.innerHTML=o||'Recorded moves will appear here';M.scrollTop=M.scrollHeight;if(typeof refreshIllegalExport==='function')refreshIllegalExport();
+const l=$('last');l.textContent=physicalMoveLog.length?'Last: '+physicalMoveLog[physicalMoveLog.length-1].label:h.length?'Last: '+((h.length+1)>>1)+(h.length%2?'. ':'… ')+h[h.length-1]:'—'}
+const PN={p:'Pawn',n:'Knight',b:'Bishop',r:'Rook',q:'Queen',k:'King'},spk=t=>{if(!voice||!window.speechSynthesis)return;try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.rate=.95;speechSynthesis.speak(u)}catch(e){}},
+sayMove=x=>{const sqn=z=>z[0]+' '+z[1];let t;if(x.flags.includes('k'))t='Castles kingside';else if(x.flags.includes('q'))t='Castles queenside';
+else{t=PN[x.piece]+(x.captured?' takes ':' ')+sqn(x.to);if(x.promotion)t+=', promotes to '+PN[x.promotion]}
+if(x.san.includes('#'))t+=', checkmate';else if(x.san.includes('+'))t+=', check';else if(game.in_draw&&game.in_draw())t+=', draw';spk(t)},
+getPGN=()=>{const g=game,d=new Date(),p=n=>String(n).padStart(2,'0'),res=g.in_checkmate()?(g.turn()=='w'?'0-1':'1-0'):g.in_draw()?'1/2-1/2':'*';
+g.header('Event','Scanned game','Site','Chess Move Scanner','Date',d.getFullYear()+'.'+p(d.getMonth()+1)+'.'+p(d.getDate()),'Round','-','White','White','Black','Black','Result',res);return hasIllegalMoves?('[Event \"Scanned game\"]\n[Result \"*\"]\n\n'+physicalMoveLog.map((x,i)=>(i%2===0?Math.floor(i/2)+1+'. ':'')+x.label).join(' ')+' *'):g.pgn()};
+function drawPos(m,start){if(typeof Chess==='undefined')return;const b=(start?new Chess():game).board(),z=30;pc.clearRect(0,0,240,240);pc.font='22px serif';pc.textAlign='center';pc.textBaseline='middle';
+for(let r=0;r<8;r++)for(let f=0;f<8;f++){const q=r*8+f,p=b[r][f];let c=(r+f)&1?'#b58863':'#f0d9b5';if(m){if(p&&!m[q])c='#ef4444';else if(!p&&m[q])c='#f59e0b'}pc.fillStyle=c;pc.fillRect(f*z,r*z,z,z);
+if(p){const w=p.color=='w';pc.lineWidth=2.5;pc.strokeStyle=w?'#000':'#fff';pc.fillStyle=w?'#fff':'#111';pc.strokeText(U[p.type],f*z+15,r*z+16);pc.fillText(U[p.type],f*z+15,r*z+16)}}}
+
+function drawRec(ch){drawPos(null);pc.fillStyle='rgba(255,220,0,.5)';for(let q=0;q<64;q++)if(ch[q])pc.fillRect((q&7)*30,(q>>3)*30,30,30)}
+const adjR=(F,R)=>{const d=[];for(let q=0;q<64;q++)d.push([sd(F,R,q),q]);d.sort((a,b)=>a[0]-b[0]);let sb=0,sf=0;
+for(let i=0;i<40;i++){const q=d[i][1];for(let k=0;k<48;k++){sb+=R[q*K+k];sf+=F[q*K+k]}}
+const g=Math.max(.7,Math.min(1.4,sb/(sf||1))),A=new Float32Array(F.length);
+for(let q=0;q<64;q++){for(let k=0;k<48;k++)A[q*K+k]=Math.min(255,F[q*K+k]*g);A[q*K+48]=F[q*K+48]}return A};
+/* ---------- state machine ---------- */
+function startSearch(m){mode=m||'search';found=0;lastQ=null;t0=Date.now();st(1,m=='manual'?'drag corners, then Lock':'searching…');st(2,'waiting');st(3,'waiting');st(4,'waiting');prog(0);
+msg(m=='manual'?'Drag the 4 white dots onto the board corners, then tap “Lock border now”.':'Searching for the board… hold steady, all 4 corners in view. You can also drag the dots yourself.')}
+function extOut(){const H=hom([[0,0],[8,0],[8,8],[0,8]],rq());return[[-1,-1],[9,-1],[9,9],[-1,9]].some(p=>{const[x,y]=ap(H,p[0],p[1]);return x<0||y<0||x>O.width||y>O.height})}
+function lock(a){occModelReady=false;occModel=null;mode='scan';n=0;acc=null;colorChk=0;st(1,'locked ✓','ok');st(2,'scanning…');prog(0);msg('Border locked. Keep the board EMPTY – scanning squares…'+(extOut()?'  ⚠ The blue dashed capture area goes outside the picture – move the camera back a little so it fits.':''));a?foundSnd():beep(660,.12,.45)}
+function detectByContours(){
+ if(!(window.cv&&cv.Mat&&cv.findContours))return null;
+ let src,gray,blur,edges,contours,hierarchy;
+ try{
+  src=cv.imread(W);gray=new cv.Mat();blur=new cv.Mat();edges=new cv.Mat();
+  cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
+  cv.GaussianBlur(gray,blur,new cv.Size(5,5),0);
+  cv.Canny(blur,edges,45,125);
+  contours=new cv.MatVector();hierarchy=new cv.Mat();
+  cv.findContours(edges,contours,hierarchy,cv.RETR_LIST,cv.CHAIN_APPROX_SIMPLE);
+  let winner=null,bestArea=0;
+  for(let i=0;i<contours.size();i++){
+   const c=contours.get(i),area=cv.contourArea(c);
+   if(area< W.width*W.height*.06 ||area>W.width*W.height*.93){c.delete();continue}
+   const peri=cv.arcLength(c,true),poly=new cv.Mat();
+   cv.approxPolyDP(c,poly,.025*peri,true);
+   if(poly.rows===4&&cv.isContourConvex(poly)){
+    const p=[];for(let j=0;j<4;j++)p.push([poly.data32S[j*2],poly.data32S[j*2+1]]);
+    const cx=p.reduce((a,x)=>a+x[0],0)/4,cy=p.reduce((a,x)=>a+x[1],0)/4;
+    p.sort((a,b)=>Math.atan2(a[1]-cy,a[0]-cx)-Math.atan2(b[1]-cy,b[0]-cx));
+    let tl=0;for(let j=1;j<4;j++)if(p[j][0]+p[j][1]<p[tl][0]+p[tl][1])tl=j;
+    const ordered=Array.from({length:4},(_,j)=>p[(tl+j)%4]);
+    // Verify that the proposed quadrilateral actually contains a checkerboard.
+    const H=hom([[0,0],[8,0],[8,8],[0,8]],ordered);
+    let lights=[],darks=[],valid=true;
+    const pixels=wc.getImageData(0,0,W.width,W.height).data;
+    for(let y=0;y<8;y++)for(let x=0;x<8;x++){
+     const [px,py]=ap(H,x+.5,y+.5),xx=Math.round(px),yy=Math.round(py);
+     if(xx<0||yy<0||xx>=W.width||yy>=W.height){valid=false;break}
+     const k=(yy*W.width+xx)*4,v=.299*pixels[k]+.587*pixels[k+1]+.114*pixels[k+2];
+     ((x+y)%2?darks:lights).push(v);
+    }
+    if(valid&&lights.length===32&&darks.length===32){
+     const contrast=Math.abs(lights.reduce((a,b)=>a+b,0)/32-darks.reduce((a,b)=>a+b,0)/32);
+     if(contrast>12&&area>bestArea){bestArea=area;winner=ordered.map(p=>[p[0]/sc,p[1]/sc])}
+    }
+   }
+   poly.delete();c.delete();
+  }
+  return winner;
+ }catch(e){console.warn('Contour board finder:',e);return null}
+ finally{for(const m of [src,gray,blur,edges,contours,hierarchy])try{m?.delete()}catch(e){}}
+}
+// Validate the actual 8x8 alternating squares before automatic locking.
+// Perspective is handled by the homography; mild camera-angle distortion is OK.
+function validBoardSquares(c){
+ try{
+  if(!c||c.length!==4)return false;
+  const H=hom([[0,0],[8,0],[8,8],[0,8]],c.map(p=>[p[0]*sc,p[1]*sc]));
+  const w=W.width,h=W.height,pixels=wc.getImageData(0,0,w,h).data;
+  const values=[];
+  for(let r=0;r<8;r++)for(let f=0;f<8;f++){
+   const samples=[];
+   for(const [dx,dy] of [[0,0],[-.16,0],[.16,0],[0,-.16],[0,.16]]){
+    const [x,y]=ap(H,f+.5+dx,r+.5+dy),ix=Math.round(x),iy=Math.round(y);
+    if(!Number.isFinite(x)||!Number.isFinite(y)||ix<0||iy<0||ix>=w||iy>=h)return false;
+    const k=(iy*w+ix)*4;samples.push(.299*pixels[k]+.587*pixels[k+1]+.114*pixels[k+2]);
+   }
+   samples.sort((a,b)=>a-b);values.push(samples[2]);
+  }
+  const med=a=>{const b=a.slice().sort((x,y)=>x-y);return(b[15]+b[16])/2};
+  const even=[],odd=[];
+  for(let r=0;r<8;r++)for(let f=0;f<8;f++)(((r+f)&1)?odd:even).push(values[r*8+f]);
+  const contrast=Math.abs(med(even)-med(odd));
+  if(contrast<11)return false;
+  const direction=Math.sign(med(even)-med(odd));
+  let consistent=0;
+  const middle=(med(even)+med(odd))/2;
+  for(let r=0;r<8;r++)for(let f=0;f<8;f++){
+   const expected=((r+f)&1)?-direction:direction;
+   if((values[r*8+f]-middle)*expected>2)consistent++;
+  }
+  return consistent>=49; // allow some shadows and square-color variation
+ }catch(e){return false}
+}
+let searchAttempt=0;
+function searchStep(){
+ searchAttempt++;
+ // The border stays RED until an actual 8x8 square pattern is verified.
+ let c=detectByContours();
+ if(c&&!validBoardSquares(c))c=null;
+ if(!c){c=detect();if(c&&!validBoardSquares(c))c=null}
+ if(c){
+  const stable=lastQ&&c.reduce((sum,p,i)=>sum+Math.hypot(p[0]-lastQ[i][0],p[1]-lastQ[i][1]),0)/4<O.width*.035;
+  found=stable?found+1:1;
+  lastQ=c.map(p=>p.slice());quad=c.map(p=>p.slice());
+  prog(Math.min(1,found/2));
+  if(found>=2){st(1,'8×8 board verified ✓','ok');lock(true);return}
+  st(1,'checking 64 squares…');
+ }else{found=0;lastQ=null;prog(0)}
+ if(searchAttempt%4===0&&!c)st(1,'searching ('+searchAttempt+' frames)…');
+ if(Date.now()-t0>7000)msg('Board not verified automatically. Show the full empty checkerboard, or drag the 8 border dots and press Lock border now.');
+}
+function scanStep(){const F=warp();acc=acc||new Float32Array(F.length);for(let i=0;i<F.length;i++)acc[i]+=F[i];n++;prog(n/6);st(2,'squares '+Math.min(64,Math.round(n*64/6))+'/64');tick(n/6);
+if(n<6)return;base=acc.map(v=>v/6);const L=[];let m=0;for(let q=0;q<64;q++){L[q]=lum(base,q);m+=L[q]/64}let c=0;for(let q=0;q<64;q++){const r=q>>3,f=q&7;c+=Math.sign(L[q]-m)*(((f+r)&1)?-1:1)}
+if(c<-20){rot=(rot+1)%4;$('viewSide').value=String(rot);n=0;acc=null;msg('Board turned 90° – rescanning…');return}
+if(c<20){msg('Board border detected; square colors have low contrast. Continuing with image-based calibration.');}
+st(2,'64/64 ✓','ok');mode='pieces';lastOk=0;ready=0;pst=0;prevF=null;thrQ=null;forceStart=0;st(3,'place pieces at start position');prog(0);msg('EMPTY BOARD LEARNED ✓  Now place all pieces in the standard start position (White at the bottom) and keep your hands away.');buzzer()}
+function pieceStep(){const F=adj(warp());if(!prevF){prevF=F;return}
+let g=0;for(let q=0;q<64;q++)g+=sd(F,prevF,q);g/=64;prevF=F;
+const E=q=>{const r=q>>3;return r<2||r>5},d=[],emD=[];let mo=0;
+for(let q=0;q<64;q++){d[q]=sd(F,base,q);if(E(q))mo+=d[q]/32;else emD.push(d[q])}
+const disp=thrQ||new Array(64).fill(Math.max(8,mo*.4));drawPos(d.map((v,q)=>v>disp[q]),true);
+if(mo<6){pst=0;st(3,'waiting for pieces…');prog(0);return}
+if(g>5){pst=0;msg('Hold still… (hands away from the board)');return}
+if(++pst<4)return;
+if(!colorChk){colorChk=1;let t=0,b=0;for(let q=0;q<16;q++)t+=(lum(F,q)-lum(base,q))/16;for(let q=48;q<64;q++)b+=(lum(F,q)-lum(base,q))/16;
+if(t-b>6){rot=(rot+2)%4;base=flip180(base);prevF=null;pst=0;msg('Sides looked reversed – turned the board 180°. Hold still…');return}}
+/* Only the 32 start squares are examined for pieces; ranks 3-6 are assumed empty (used just to measure noise) */
+emD.sort((a,b)=>a-b);const nf=emD[Math.floor(emD.length*.75)],fl=nf*1.5+1.5,cT=[0,0];
+for(let c=0;c<2;c++){const a=[];for(let q=0;q<64;q++)if(E(q)&&(((q>>3)+(q&7))&1)==c)a.push(d[q]);a.sort((x,y)=>x-y);cT[c]=Math.max(fl,.5*a[Math.floor(a.length*.2)])}
+const T=[];for(let q=0;q<64;q++){const c=((q>>3)+(q&7))&1;T[q]=E(q)?Math.max(fl,Math.min(cT[c],.5*d[q])):cT[c]}
+let ok=0,extra=0;const bad=[];for(let q=0;q<64;q++){if(E(q)){if(d[q]>T[q])ok++;else bad.push(nm(q))}else if(d[q]>T[q])extra++}
+thrQ=T;drawPos(d.map((v,q)=>v>T[q]),true);prog(ok/32);st(3,ok+'/32 pieces seen');
+if((ok==32&&extra<=3&&pst>=6)||(ok>=30&&pst>=12)||forceStart){forceStart=0;Nz=1.5;newGame();refF=null;prevF=null;stable=0;unclear=0;mode='rec';resetTracking();st(3,'32 pieces seen ✓ (rest assumed empty)','ok');st(4,'recording – play!','ok');prog(1);msg('READY – all other squares are treated as empty'+(bad.length?' (weak pieces: '+bad.join(' ')+')':'')+'. Start playing, moves are recorded automatically.');readySnd();spk('Board ready. Start playing.')}
+else if(pst>=12)msg('Cannot see pieces on: '+bad.join(' ')+(extra?'; unexpected objects on '+extra+' middle squares':'')+'. Check the setup and light, or press Resync to start anyway.')}
+/* v18: track stable observations and classify square occupancy relative to
+   the empty-board reference.  Never advance a game on a single noisy frame.
+   OpenCV is optional: the calibrated geometry and chess engine still work offline
+   after the libraries have been cached. */
+let showDiagnostics=false,cvEnabled=true,cvReady=false,cvStatusAt=0;
+let sampleAt=0,quietCount=0,proposal='',proposalCount=0,uncertainAt=0;
+let acceptedFeatures=null,occupiedExamples=null,recNoise=2;
+const median=a=>{const z=a.slice().sort((x,y)=>x-y);return z[z.length>>1]||0};
+const boardColor=(g,q)=>{const p=g.board()[q>>3][q&7];return p?(p.color==='w'?1:2):0};
+function learnOccupied(F){
+ occupiedExamples=[[],[],[]];const B=game.board();
+ for(let q=0;q<64;q++){const p=B[q>>3][q&7];if(p)occupiedExamples[p.color==='w'?1:2].push({q,feat:F.slice(q*K,(q+1)*K)});}
+}
+function normalizeAgainst(F,R){return adjR(F,R)}
+/* Illumination-resistant square difference: color ratios and local texture.
+   A passing shadow mostly changes intensity, whereas a piece changes
+   chromatic structure and edge energy. Not a trained shadow classifier. */
+function robustSquareDifference(A,B,q){
+ const o=q*K;let chroma=0,shape=0,brightness=0;
+ for(let k=0;k<48;k+=3){
+  const ar=A[o+k],ag=A[o+k+1],ab=A[o+k+2];
+  const br=B[o+k],bg=B[o+k+1],bb=B[o+k+2];
+  const at=Math.max(24,ar+ag+ab),bt=Math.max(24,br+bg+bb);
+  chroma+=(Math.abs(ar/at-br/bt)+Math.abs(ag/at-bg/bt)+Math.abs(ab/at-bb/bt))*95;
+  brightness+=Math.abs(at-bt)/3;
+ }
+ chroma/=16;brightness/=16;
+ shape=Math.abs(A[o+48]-B[o+48]);
+ // Brightness is deliberately weak: changing sunlight should not look
+ // like a new piece, but monochrome pieces still contribute via edges.
+ return chroma*2.4+Math.min(30,shape)*2.5+brightness*.09;
+}
+function occupancyEvidence(F){
+ const A=adj(F),dist=new Float32Array(64);
+ for(let q=0;q<64;q++)dist[q]=robustSquareDifference(A,base,q);
+ return dist;
+}
+
+/* Camera-trained lightweight occupancy classifier (8-feature logistic model).
+   Training labels come from the photographed EMPTY board and the standard
+   starting position, NOT from an external/pretrained neural network.
+   It is a second, conservative signal; chess rules remain authoritative. */
+let occModel=null,occModelReady=false;
+function occVector(F,q){
+ const o=q*K,b=base,light=((q>>3)+(q&7))&1;
+ let chroma=0,brightness=0,contrast=0,red=0,blue=0;
+ for(let k=0;k<48;k+=3){
+  const a=F[o+k],g=F[o+k+1],z=F[o+k+2],
+        ar=b[o+k],gr=b[o+k+1],zr=b[o+k+2];
+  const t=Math.max(24,a+g+z),u=Math.max(24,ar+gr+zr);
+  chroma+=(Math.abs(a/t-ar/u)+Math.abs(g/t-gr/u)+Math.abs(z/t-zr/u));
+  brightness+=Math.abs(t-u)/3;
+  contrast+=(a+g+z-ar-gr-zr)/3;
+  red+=a/t-ar/u;blue+=z/t-zr/u;
+ }
+ const edge=Math.abs(F[o+48]-b[o+48]);
+ return [1,Math.min(4,chroma*9),Math.min(4,edge/12),
+  Math.min(4,brightness/48),Math.max(-3,Math.min(3,contrast/48)),
+  Math.max(-2,Math.min(2,red*5)),Math.max(-2,Math.min(2,blue*5)),
+  light?1:-1];
+}
+const sigmoid=x=>1/(1+Math.exp(-Math.max(-25,Math.min(25,x))));
+function occProbability(F,q){
+ if(!occModelReady)return null;
+ const x=occVector(F,q);
+ return sigmoid(occModel.reduce((a,w,i)=>a+w*x[i],0));
+}
+function trainOccupancy(startF){
+ if(!base||!game)return;
+ const samples=[];
+ // All 64 squares of the empty board are negative examples.
+ for(let q=0;q<64;q++){
+  const x=occVector(base,q);samples.push([x,0]);
+  // Global illumination variations without adding a piece.
+  for(const gain of [.72,.86,1.14,1.28]){
+   const f=new Float32Array(base);
+   for(let k=0;k<48;k++)f[q*K+k]=Math.min(255,base[q*K+k]*gain);
+   samples.push([occVector(f,q),0]);
+  }
+ }
+ // The 32 standard starting squares are positive; the other 32
+ // squares are additional negatives. Do not train if setup was forced.
+ const b=game.board();
+ for(let q=0;q<64;q++){
+  const label=b[q>>3][q&7]?1:0;
+  const x=occVector(startF,q);
+  samples.push([x,label]);
+ }
+ let weights=new Float64Array(8);
+ for(let epoch=0;epoch<260;epoch++){
+  let grad=new Float64Array(8);
+  for(const [x,y] of samples){
+   const pred=sigmoid(weights.reduce((v,w,i)=>v+w*x[i],0));
+   const error=(pred-y)*(y?3:0.35); // balance occupied vs negatives
+   for(let i=0;i<8;i++)grad[i]+=error*x[i];
+  }
+  const lr=.16/(1+epoch*.013);
+  for(let i=0;i<8;i++)weights[i]-=lr*(grad[i]/samples.length+(i?0.002*weights[i]:0));
+ }
+ // Only enable when the fitted model separates the observed start
+ // position from empty-board reference; otherwise remain heuristic-only.
+ let pos=0,neg=0,np=0,nn=0;
+ for(let q=0;q<64;q++){
+  const v=sigmoid(weights.reduce((a,w,i)=>a+w*occVector(startF,q)[i],0));
+  if(b[q>>3][q&7]){pos+=v;np++}else{neg+=v;nn++}
+ }
+ const separation=pos/Math.max(1,np)-neg/Math.max(1,nn);
+ occModelReady=separation>.24;
+ occModel=weights;
+ $('modelStatus').textContent=occModelReady?
+  'Occupancy model: trained on this board ('+Math.round(separation*100)+'% separation)':
+  'Occupancy model: low confidence; safe fallback';
+}
+function modelCandidateScore(F,oldF,previous,expected){
+ if(!occModelReady)return 0;
+ let v=0;
+ for(let q=0;q<64;q++){
+  const old=!!boardColor(previous,q),next=!!boardColor(expected,q);
+  if(old===next)continue;
+  const p=occProbability(F,q),prior=occProbability(oldF,q);
+  // Relative probability shift, clipped to avoid over-trusting a small model.
+  const delta=(p-prior)*(next?1:-1);
+  v+=Math.max(-8,Math.min(8,delta*12));
+ }
+ return v;
+}
+/* Evaluate each legal move against the actual stable image, not a guessed
+   square color. An empty->occupied transition and occupied->empty transition
+   must BOTH be supported. Captures are scored as visual replacement. */
+function occupancyScore(F,previous,expected,obs,oldObs,changes){
+ let score=0,positive=0,negative=0,expectedCount=0;
+ const changedSquares=[];
+ for(let q=0;q<64;q++){
+  const old=boardColor(previous,q),now=boardColor(expected,q);
+  const change=changes[q], delta=obs[q]-oldObs[q];
+  if(old===now)continue;
+  expectedCount++;changedSquares.push(q);
+  let evidence;
+  if(old===0&&now!==0)evidence=delta;
+  else if(old!==0&&now===0)evidence=-delta;
+  else evidence=change*.7; // a capture replaces a piece on its square
+  // Normalise the confidence; visual change is necessary but not sufficient.
+  if(evidence>2 && change>4){positive++;score+=Math.min(48,evidence)*2+Math.min(change,40)*.6;}
+  else if(evidence>0&&change>3){positive++;score+=Math.min(20,evidence)*1.2;}
+  else {negative++;score-=Math.max(16,12-evidence)*1.5;}
+ }
+ // Penalize unrelated changed squares, but tolerate minor reflections.
+ for(let q=0;q<64;q++)if(!changedSquares.includes(q)){
+  const excess=changes[q]-Math.max(8,recNoise*3.5);
+  if(excess>0)score-=Math.min(excess,45)*.35;
+ }
+ return {score,positive,negative,expectedCount};
+}
+function candidateBoards(){
+ const options=[],seen=new Set();
+ for(const x of game.moves({verbose:true})){
+  const key=x.from+x.to;/* Promotion types look identical to the camera before the choice. */if(seen.has(key))continue;seen.add(key);
+  const g=new Chess(game.fen());g.move({from:x.from,to:x.to,promotion:x.promotion||'q'});
+  options.push({key,moves:[x],g});
+ }
+ return options;
+}
+// Promotion: two 3-second opportunities; default Queen after 6 seconds.
+let promotionPending=null,promotionTimers=[];
+function cancelPromotion(){
+ promotionTimers.forEach(clearTimeout);promotionTimers=[];
+ promotionPending=null;$('promotionPrompt').classList.remove('open');
+}
+function saveLastGoodSnapshot(features,pixels){
+ if(!features||!pixels)return;
+ lastGoodSnapshot={fen:game.fen(),features:new Float32Array(features),
+  pixels:new Uint8ClampedArray(pixels)};
+}
+/* Recover from BOTH directions of occupancy transitions, relative to the
+   immutable photograph/FEN from the last recorded good move.
+   Source: occupied -> empty. Destination: empty -> occupied, or occupied ->
+   different occupied for a capture. Score only legal moves from that FEN. */
+function bidirectionalRecoveryCandidates(currentFeatures,currentPixels){
+ const snap=lastGoodSnapshot;
+ if(!snap||!base||!currentFeatures||!currentPixels)return [];
+ if(snap.fen!==game.fen())return []; // never compare against a stale FEN
+ const before=new Chess(snap.fen),old=adj(snap.features),now=adj(currentFeatures);
+ const photo=photographDifference(snap.pixels,currentPixels);
+ const noise=median(Array.from(photo));
+ const floor=Math.max(1.8,noise*1.35);
+ const oldOcc=new Float32Array(64),newOcc=new Float32Array(64);
+ const delta=new Float32Array(64);
+ for(let q=0;q<64;q++){
+  oldOcc[q]=sd(old,base,q);newOcc[q]=sd(now,base,q);
+  delta[q]=Math.max(0,photo[q]-floor);
+ }
+ const results=[];
+ for(const c of candidateBoards()){
+  const m=c.moves[0],from=sq(m.from),to=sq(m.to);
+  const oldBoard=before.board(),newBoard=c.g.board();
+  const source=oldBoard[from>>3][from&7],target=oldBoard[to>>3][to&7];
+  if(!source||source.color!==before.turn())continue;
+  // A real source must look more empty, not merely different.
+  const vanished=oldOcc[from]-newOcc[from];
+  const srcEvidence=Math.max(0,vanished)*1.8+Math.min(30,delta[from])*.6;
+  if(delta[from]<2.2||(vanished<1.5&&newOcc[from]>oldOcc[from]*.9))continue;
+  // For a quiet move, destination becomes occupied; for a capture it
+  // remains occupied but its appearance must change (including en passant).
+  const gained=newOcc[to]-oldOcc[to];
+  const destEvidence=Math.max(0,gained)*1.8+Math.min(30,delta[to])*.7;
+  if(delta[to]<2.2)continue;
+  if(!target&&!m.flags?.includes('e')&&gained<1.5&&newOcc[to]<oldOcc[to]*1.12)continue;
+  let explained=0,unexpected=0;
+  for(let q=0;q<64;q++){
+   const a=oldBoard[q>>3][q&7],b=newBoard[q>>3][q&7];
+   const changed=(!a!==!b)||(a&&b&&(a.type!==b.type||a.color!==b.color));
+   const d=delta[q];
+   if(changed)explained+=Math.min(35,d);
+   else unexpected+=Math.max(0,d-3);
+  }
+  const score=srcEvidence*2+destEvidence*1.7+explained*.85-unexpected*.9;
+  results.push({...c,score,bidirectional:true});
+ }
+ results.sort((a,b)=>b.score-a.score);
+ return results;
+}
+/* Nonstandard moves: retain a physical-board FEN even if chess.js rejects
+   the move. The nonstandard move is marked in the move log and PGN export.
+   Do not silently convert an illegal move into a legal one. */
+let physicalMoveLog=[],hasIllegalMoves=false;
+function physicalMoveCandidates(F,pixels){
+ if(!lastGoodSnapshot||!base||lastGoodSnapshot.fen!==game.fen())return [];
+ const before=game.board(),old=adj(lastGoodSnapshot.features),now=adj(F);
+ const diff=photographDifference(lastGoodSnapshot.pixels,pixels);
+ const floor=Math.max(2,median(Array.from(diff))*1.45);
+ const sources=[],destinations=[];
+ for(let q=0;q<64;q++){
+  const piece=before[q>>3][q%8],d=Math.max(0,diff[q]-floor);
+  const o=sd(old,base,q),n=sd(now,base,q);
+  if(piece&&d>3&&o-n>Math.max(2,o*.12))sources.push({q,score:d+Math.max(0,o-n)});
+  if(d>3&&(!piece?n-o>Math.max(2,o*.1):true))
+   destinations.push({q,score:d+Math.max(0,n-o)});
+ }
+ const options=[];
+ for(const a of sources)for(const b of destinations){
+  if(a.q===b.q)continue;
+  const moving=before[a.q>>3][a.q&7],target=before[b.q>>3][b.q&7];
+  if(!moving||target?.color===moving.color)continue;
+  // Do not infer illegal moves while a normal legal move is plausible.
+  const from=nm(a.q),to=nm(b.q);
+  const legal=game.moves({verbose:true}).some(x=>x.from===from&&x.to===to);
+  if(legal)continue;
+  const unexplained=diff.reduce((sum,v,q)=>sum+(q===a.q||q===b.q?0:Math.max(0,v-floor-4)),0);
+  const score=a.score+b.score-unexplained*.75;
+  options.push({from,to,piece:moving.type,color:moving.color,captured:target?.type||null,score});
+ }
+ options.sort((a,b)=>b.score-a.score);
+ return options;
+}
+function applyPhysicalMove(x,features,pixels){
+ const rows=game.board().map(r=>r.map(p=>p?{type:p.type,color:p.color}:null));
+ const from=sq(x.from),to=sq(x.to),piece=rows[from>>3][from&7];
+ if(!piece)return false;
+ rows[from>>3][from&7]=null;
+ rows[to>>3][to&7]=piece;
+ if(piece.type==='p'&&(to>>3===0||to>>3===7))piece.type='q';
+ const ranks=rows.map(row=>{
+  let out='',empty=0;
+  for(const p of row){if(!p){empty++;continue}
+   if(empty){out+=empty;empty=0}
+   out+=p.color==='w'?p.type.toUpperCase():p.type;
+  }
+  return out+(empty||'');
+ });
+ const parts=game.fen().split(' ');
+ const rights=parts[2].replace(piece.type==='k'?(piece.color==='w'?/[KQ]/g:/[kq]/g):/$^/g,'');
+ // Invalid movement forfeits castling rights for a moved king/rook.
+ let castling=rights;
+ if(piece.type==='r'){
+  const bit={a1:'Q',h1:'K',a8:'q',h8:'k'}[x.from];
+  if(bit)castling=castling.replace(bit,'');
+ }
+ if(castling==='')castling='-';
+ const fen=[ranks.join('/'),piece.color==='w'?'b':'w',castling,'-',String(piece.type==='p'||x.captured?0:Number(parts[4]||0)+1),String(Number(parts[5]||1)+(piece.color==='b'?1:0))].join(' ');
+ const previousFen=game.fen();
+ if(!game.load(fen)){game.load(previousFen);return false}
+ const letter=({p:'',n:'N',b:'B',r:'R',q:'Q',k:'K'})[piece.type]||'';
+ const label=letter+x.from+(x.captured?'x':'-')+x.to+' (illegal)';
+ physicalMoveLog.push({label,fen,previousFen,illegal:true});
+ hasIllegalMoves=true;
+ if(features&&pixels){acceptedFeatures=features;acceptedFlatPixels=pixels;saveLastGoodSnapshot(features,pixels)}else resetTracking();
+ refF=features;prevF=null;quietCount=0;proposal='';proposalCount=0;pendingVerification=null;uncertaintySince=0;
+ motionAt=performance.now();clearSettled();
+ showMoves();msg('Recorded physical move: '+label);spk('Illegal move recorded, '+x.from+' to '+x.to);
+ return true;
+}
+function finishMove(x,features,pixels,piece){
+ const previousFen=game.fen();
+ const m=game.move({from:x.from,to:x.to,promotion:piece||x.promotion||'q'});
+ if(!m){msg('Move could not be recorded. Please verify the physical board.');return}
+ if(features&&pixels){acceptedFeatures=features;acceptedFlatPixels=pixels;saveLastGoodSnapshot(features,pixels)}else resetTracking();refF=features;prevF=null;quietCount=0;
+ proposal='';proposalCount=0;pendingVerification=null;uncertaintySince=0;
+ motionAt=performance.now();clearSettled();
+ physicalMoveLog.push({label:m.san,fen:game.fen(),previousFen,illegal:false});
+ m.captured?capSnd():beep(740,.08,.45);showMoves();msg('Recorded: '+m.san);sayMove(m);
+ if(game.in_checkmate()){msg('Checkmate! Game over. Export PGN.');spk('Checkmate!')}else if(game.game_over())msg('Game over. Draw. Export PGN.');
+}
+function requestPromotion(x,features,pixels){
+ if(promotionPending)return;
+ promotionPending={x,features,pixels};
+ $('promotionMessage').textContent='Choose Queen, Rook, Knight or Bishop (3 seconds).';
+ $('promotionPrompt').classList.add('open');
+ msg('Pawn promotion: select a piece on screen.');
+ beep(880,.12,.5);
+ promotionTimers.push(setTimeout(()=>{
+  if(!promotionPending)return;
+  $('promotionMessage').textContent='Please choose a promotion piece! 3 more seconds; then Queen will be selected automatically.';
+  msg('Pawn promotion: second request — choose a piece (3 seconds).');
+  beep(880,.12,.5);beep(880,.12,.5,'sine',.2);
+ },3000));
+ promotionTimers.push(setTimeout(()=>choosePromotion('q'),6000));
+}
+function choosePromotion(piece){
+ const pending=promotionPending;if(!pending)return;
+ cancelPromotion();
+ finishMove(pending.x,pending.features,pending.pixels,piece);
+}
+$('promotionChoices').querySelectorAll('button').forEach(b=>b.onclick=()=>choosePromotion(b.dataset.promote));
+let pendingVerification=null;
+let motionAt=0, baselineCount=0, baselineAccum=null, baselineStart=0;
+let freezeSince=0, lastAcceptedAt=0;
+const SETTLE_MS=240, SETTLE_SAMPLES=2;
+let settledAccum=null,settledCount=0,settledFrom=0;
+function clearSettled(){settledAccum=null;settledCount=0;settledFrom=0}
+function averageSettled(F){
+ if(!settledAccum){settledAccum=new Float64Array(F.length);settledFrom=performance.now()}
+ for(let i=0;i<F.length;i++)settledAccum[i]+=F[i];
+ settledCount++;
+ return Float32Array.from(settledAccum,v=>v/settledCount);
+}
+function resetTracking(){lastGoodSnapshot=null;cancelPromotion();uncertaintySince=0;pendingVerification=null;acceptedFlatPixels=null;acceptedFeatures=null;prevF=null;quietCount=0;proposal='';proposalCount=0;recNoise=2;baselineCount=0;baselineAccum=null;motionAt=0;freezeSince=0;clearSettled();}
+
+/* Compare full square photographs (not just average square colors).
+   Per-square illumination normalization discounts uniform brightness changes.
+   Pixel edges and chromaticity retain evidence of piece silhouette changes. */
+function photographDifference(oldPic,newPic){
+ const result=new Float32Array(64);
+ if(!oldPic||!newPic)return result;
+ for(let q=0;q<64;q++){
+  const sx=M+(q%8)*Q,sy=M+Math.floor(q/8)*Q;
+  let oldMean=0,newMean=0,count=0;
+  for(let y=3;y<29;y+=2)for(let x=3;x<29;x+=2){
+   const k=((sy+y)*SW+sx+x)*4;
+   oldMean+=(oldPic[k]*.299+oldPic[k+1]*.587+oldPic[k+2]*.114);
+   newMean+=(newPic[k]*.299+newPic[k+1]*.587+newPic[k+2]*.114);count++;
+  }
+  oldMean/=count;newMean/=count;
+  const gain=Math.max(.65,Math.min(1.5,oldMean/Math.max(12,newMean)));
+  let change=0;
+  for(let y=3;y<28;y+=2)for(let x=3;x<28;x+=2){
+   const k=((sy+y)*SW+sx+x)*4;
+   const l=k+4;
+   const oa=oldPic[k]*.299+oldPic[k+1]*.587+oldPic[k+2]*.114;
+   const na=(newPic[k]*.299+newPic[k+1]*.587+newPic[k+2]*.114)*gain;
+   const oe=oldPic[l]*.299+oldPic[l+1]*.587+oldPic[l+2]*.114-oa;
+   const ne=(newPic[l]*.299+newPic[l+1]*.587+newPic[l+2]*.114)*gain-na;
+   const os=Math.max(25,oldPic[k]+oldPic[k+1]+oldPic[k+2]);
+   const ns=Math.max(25,newPic[k]+newPic[k+1]+newPic[k+2]);
+   const chroma=Math.abs(oldPic[k]/os-newPic[k]/ns)+
+      Math.abs(oldPic[k+2]/os-newPic[k+2]/ns);
+   change+=Math.min(70,Math.abs(oa-na))*.26+
+           Math.min(65,Math.abs(oe-ne))*.52+
+           Math.min(1,chroma)*38;
+  }
+  result[q]=change/(13*13);
+ }
+ return result;
+}
+function imageMoveScore(previous,expected,diffs,noise){
+ let sum=0;
+ for(let q=0;q<64;q++){
+  const a=previous.board()[q>>3][q%8],b=expected.board()[q>>3][q%8];
+  const changed=(!a!==!b)||(a&&b&&(a.color!==b.color||a.type!==b.type));
+  const excess=Math.max(0,diffs[q]-noise);
+  if(changed)sum+=Math.min(35,excess)*2.2;
+  else sum-=Math.min(35,excess)*.32;
+ }
+ return sum;
+}
+/* Trusted-position recovery: use the last CONFIRMED chess position and
+   its saved photograph, not a tentative move or an assumed camera state.
+   Compare legal moves by how well their exact changed squares explain
+   the current stable board. Never advance the reference on uncertainty. */
+function trustedPositionCandidates(photo,features){
+ const diffs=photographDifference(acceptedFlatPixels,photo);
+ const noise=median(Array.from(diffs));
+ const floor=Math.max(1.8,noise*1.4);
+ const ranked=[];
+ for(const c of candidateBoards()){
+  const move=c.moves[0],from=sq(move.from),to=sq(move.to);
+  const source=Math.max(0,diffs[from]-floor),dest=Math.max(0,diffs[to]-floor);
+  if(source<2.0||dest<2.0)continue;
+  const before=game.board(),after=c.g.board();
+  let explain=0,unexplained=0;
+  for(let q=0;q<64;q++){
+   const a=before[q>>3][q%8],b=after[q>>3][q%8];
+   const changed=(!a!==!b)||(a&&b&&(a.type!==b.type||a.color!==b.color));
+   const d=Math.max(0,diffs[q]-floor);
+   if(changed)explain+=Math.min(d,35);
+   else unexplained+=Math.max(0,d-2.5);
+  }
+  const score=explain*2-unexplained*.75+Math.min(source,dest)*1.5;
+  ranked.push({...c,score,source,dest});
+ }
+ ranked.sort((a,b)=>b.score-a.score);
+ return ranked;
+}
+/* Source-first recovery from last confirmed board.
+   Step 1: locate squares whose previously present piece now looks absent,
+   comparing current features against the calibrated empty-board photograph.
+   Step 2: consider only legal moves originating on those squares.
+   Step 3: verify destination and every expected changed square against the
+   last confirmed photograph. This is a fallback, never an unconditional move. */
+function sourceFirstCandidates(F,pic){
+ if(!acceptedFeatures||!acceptedFlatPixels||!base)return [];
+ const now=adj(F),old=adj(acceptedFeatures);
+ const diffs=photographDifference(acceptedFlatPixels,pic);
+ const photoNoise=median(Array.from(diffs)),floor=Math.max(1.8,photoNoise*1.4);
+ const before=game.board();
+ const vanished=[];
+ for(let q=0;q<64;q++){
+  const piece=before[q>>3][q%8];
+  if(!piece||piece.color!==game.turn())continue;
+  const oldOcc=sd(old,base,q),newOcc=sd(now,base,q);
+  const photo=Math.max(0,diffs[q]-floor);
+  // Occupied -> empty is stronger evidence than change alone. Avoid treating
+  // mere lighting drift as disappearance.
+  const emptyGain=oldOcc-newOcc;
+  const evidence=Math.max(0,emptyGain)*1.5+Math.min(30,photo)*.6;
+  if(photo>2.2 && (emptyGain>2||newOcc<oldOcc*.82))
+   vanished.push({q,evidence,emptyGain});
+ }
+ vanished.sort((a,b)=>b.evidence-a.evidence);
+ const sources=new Map(vanished.map(v=>[v.q,v]));
+ const result=[];
+ for(const c of candidateBoards()){
+  const move=c.moves[0],from=sq(move.from),to=sq(move.to);
+  const src=sources.get(from);
+  if(!src)continue;
+  const destination=Math.max(0,diffs[to]-floor);
+  if(destination<2.2)continue;
+  const after=c.g.board();
+  let explained=0,unexpected=0;
+  for(let q=0;q<64;q++){
+   const a=before[q>>3][q%8],b=after[q>>3][q%8];
+   const differs=(!a!==!b)||(a&&b&&(a.type!==b.type||a.color!==b.color));
+   const evidence=Math.max(0,diffs[q]-floor);
+   if(differs)explained+=Math.min(35,evidence);
+   else unexpected+=Math.max(0,evidence-3);
+  }
+  const score=src.evidence*2+destination*1.3+explained*.9-unexpected*.85;
+  result.push({...c,score,sourceFirst:true,sourceEvidence:src.evidence});
+ }
+ result.sort((a,b)=>b.score-a.score);
+ return result;
+}
+// Capture-direction cross-check: compare the *new* source and destination
+// against the calibrated empty-board square and the last accepted photograph.
+// Only reject when evidence is strong enough to contradict the claimed capture.
+function captureDirectionCheck(move,F,pic){
+ if(!move.captured)return {ok:true,reason:''};
+ const from=sq(move.from),to=sq(move.to);
+ const diffs=photographDifference(acceptedFlatPixels,pic);
+ const noise=median(Array.from(diffs));
+ const fromChange=diffs[from],toChange=diffs[to];
+ if(fromChange<Math.max(2.4,noise*1.5))
+  return {ok:false,reason:'capture source did not change'};
+ if(toChange<Math.max(2.4,noise*1.5))
+  return {ok:false,reason:'captured piece square did not change'};
+ if(base){
+  const now=adj(F),old=adj(acceptedFeatures);
+  const oldFrom=sd(old,base,from),newFrom=sd(now,base,from);
+  const oldTo=sd(old,base,to),newTo=sd(now,base,to);
+  // A source that still looks occupied after a capture indicates a
+  // likely reversed or incorrect source/destination assignment.
+  if(oldFrom>10&&newFrom>oldFrom*.93&&newFrom>11)
+   return {ok:false,reason:'source square still appears occupied'};
+  // Destination should not look newly empty after a capture.
+  if(oldTo>10&&newTo<Math.max(6,oldTo*.38))
+   return {ok:false,reason:'destination looks empty after capture'};
+ }
+ return {ok:true,reason:''};
+}
+/* Conservative color consistency: learn a moving piece's appearance from
+   its SOURCE in the last confirmed flattened photo. Raw white/black brightness
+   is not a reliable classifier on different-colored board squares. */
+function pieceAppearance(pic,q){
+ if(!pic)return null;
+ const sx=M+(q%8)*Q,sy=M+Math.floor(q/8)*Q;
+ let sum=0,sum2=0,n=0;
+ for(let y=9;y<23;y+=2)for(let x=9;x<23;x+=2){
+  const k=((sy+y)*SW+sx+x)*4;
+  const lum=.299*pic[k]+.587*pic[k+1]+.114*pic[k+2];
+  sum+=lum;sum2+=lum*lum;n++;
+ }
+ return {mean:sum/n,texture:Math.sqrt(Math.max(0,sum2/n-(sum/n)**2))};
+}
+function movingPieceColorCheck(move,currentPic){
+ if(!acceptedFlatPixels||!currentPic)return {ok:true};
+ const from=sq(move.from),to=sq(move.to);
+ const oldSource=pieceAppearance(acceptedFlatPixels,from);
+ const newDest=pieceAppearance(currentPic,to);
+ const oldDest=pieceAppearance(acceptedFlatPixels,to);
+ if(!oldSource||!newDest)return {ok:true};
+ // Compare the piece's old and new central appearances; the source and
+ // destination may be opposite-colored squares. Therefore use only a very
+ // strong contradiction, never infer piece color from square brightness.
+ const delta=Math.abs(oldSource.mean-newDest.mean);
+ const destChange=oldDest?Math.abs(oldDest.mean-newDest.mean):0;
+ const sourceTexture=oldSource.texture,newTexture=newDest.texture;
+ if(delta>115&&destChange<10&&sourceTexture>14&&newTexture<5)
+  return {ok:false,reason:'destination does not resemble the moved piece'};
+ return {ok:true};
+}
+/* Verification must use a NEW settled photograph, not a second evaluation
+   of the same snapshot. Compare all 64 squares to reject phantom moves. */
+function stableBoardPhotos(a,b){
+ if(!a||!b)return false;
+ const d=photographDifference(a,b);
+ const values=Array.from(d).sort((x,y)=>x-y);
+ const medianDrift=values[32];
+ const active=values.filter(x=>x>Math.max(3.4,medianDrift*2.5)).length;
+ return medianDrift<3.8&&active<=3;
+}
+let uncertaintySince=0;
+function recStep(){
+ if(promotionPending)return;
+ const now=performance.now();if(now-sampleAt<55)return;sampleAt=now;
+ const raw=warp();
+ if(!prevF){prevF=raw;motionAt=now;clearSettled();return}
+ const motion=Array.from({length:64},(_,q)=>robustSquareDifference(raw,prevF,q));
+ prevF=raw;
+ // Do not reset the timer for mild camera noise, auto-exposure or shadows.
+ const bigMotion=median(motion)>9 || motion.filter(x=>x>18).length>13;
+ if(bigMotion){
+  motionAt=now;quietCount=0;clearSettled();pendingVerification=null;proposal='';proposalCount=0;
+  if(now-uncertainAt>1200){msg('Movement detected. Waiting until pieces and hands are still…');uncertainAt=now}
+  return;
+ }
+ quietCount++;
+ if(now-motionAt<240){
+  if(now-uncertainAt>1400){msg('Board settling briefly…');uncertainAt=now}
+  return;
+ }
+ const averaged=averageSettled(raw);
+ if(settledCount<2)return;
+ clearSettled();
+ if(!acceptedFeatures){
+  acceptedFeatures=averaged;acceptedFlatPixels=new Uint8ClampedArray(latestFlatPixels);saveLastGoodSnapshot(averaged,acceptedFlatPixels);refF=averaged;learnOccupied(averaged);
+  try{trainOccupancy(averaged)}catch(e){console.warn('Training fallback:',e);occModelReady=false}
+  msg('Photo comparison ready. Move a piece and remove your hand.');return;
+ }
+ const aligned=normalizeAgainst(averaged,acceptedFeatures);
+ const changes=Array.from({length:64},(_,q)=>robustSquareDifference(aligned,acceptedFeatures,q));
+ const noise=median(changes);
+ const cutoff=Math.max(7,noise*2.3);
+ const changed=changes.filter(x=>x>cutoff).length;
+ if(showDiagnostics)drawRec(changes.map(x=>x>cutoff));else drawPos(null);
+ const photoNow=photographDifference(acceptedFlatPixels,latestFlatPixels);
+ const photoBase=median(Array.from(photoNow));
+ const photoActive=Array.from(photoNow).filter(v=>v>Math.max(2.4,photoBase*2.3)).length;
+ if(!changed&&photoActive<2){pendingVerification=null;proposal='';proposalCount=0;return}
+ if(changed>20){
+  pendingVerification=null;proposal='';proposalCount=0;
+  if(now-uncertainAt>2000){msg('Board changed widely (shadow, hand or camera movement). Waiting.');uncertainAt=now}
+  return;
+ }
+ const pictureChanges=photoNow;
+ const pictureNoise=median(Array.from(pictureChanges));
+ const obs=occupancyEvidence(averaged),oldObs=occupancyEvidence(acceptedFeatures);
+ const ranked=[];
+ for(const c of candidateBoards()){
+  const v=occupancyScore(averaged,game,c.g,obs,oldObs,changes);
+  // Soft evidence: pieces can cast shadows or obscure neighboring squares.
+  if(v.positive<1 && imageMoveScore(game,c.g,pictureChanges,pictureNoise)<5)continue;
+  const src=sq(c.moves[0].from),dst=sq(c.moves[0].to);
+  const localBase=Math.max(1.5,pictureNoise*1.35);
+  const sourceEvidence=Math.max(0,pictureChanges[src]-localBase);
+  const destEvidence=Math.max(0,pictureChanges[dst]-localBase);
+  // The source must visibly change; otherwise a nearby piece/shadow can
+  // incorrectly explain a move to the same destination.
+  const sourceDestBonus=Math.min(30,sourceEvidence)*1.8+
+                        Math.min(30,destEvidence)*1.1;
+  const weakSourcePenalty=sourceEvidence<2.5?18:0;
+  const score=v.score*.35+imageMoveScore(game,c.g,pictureChanges,pictureNoise)+
+              modelCandidateScore(averaged,acceptedFeatures,game,c.g)*.4+
+              sourceDestBonus-weakSourcePenalty;
+  ranked.push({...c,score});
+ }
+ ranked.sort((x,y)=>y.score-x.score);
+ const best=ranked[0],next=ranked[1];
+ const confidence=best?best.score-(next?.score||0):0;
+ let selected=best,selectedConfidence=confidence;
+ // Check the origin-square disappearance independently against the last
+ // CONFIRMED photograph, even when the normal ranking is confident.
+ // This prevents a destination shadow from overriding a different source.
+ const sourceCandidates=sourceFirstCandidates(averaged,latestFlatPixels);
+ const originBest=sourceCandidates[0],originSecond=sourceCandidates[1];
+ const originGap=originBest?originBest.score-(originSecond?.score||0):0;
+ const originSure=!!originBest&&originBest.score>=13&&originGap>=Math.max(5,originBest.score*.12);
+ if(originSure && best && originBest.key!==best.key){
+  // Two independent signals disagree. Require another static image rather
+  // than recording the move guessed from neighboring-square changes.
+  selected=originBest;selectedConfidence=originGap;
+ }
+
+ if(!selected||selected.score<9||selectedConfidence<Math.max(3.5,selected.score*.08)){
+  if(!uncertaintySince)uncertaintySince=now;
+  const dual=bidirectionalRecoveryCandidates(averaged,latestFlatPixels);
+  const sourceFirst=sourceCandidates;
+  const fallback=dual.length?dual:(sourceFirst.length?sourceFirst:trustedPositionCandidates(latestFlatPixels,averaged));
+  const fb=fallback[0],runner=fallback[1];
+  const gap=fb?fb.score-(runner?.score||0):0;
+  if(fb&&fb.score>=13&&gap>=Math.max(5,fb.score*.12)){
+   selected=fb;selectedConfidence=gap;
+   if(now-uncertainAt>1700){msg((fb.bidirectional?'Previous/current occupancy recovery: ':fb.sourceFirst?'Source-square recovery: ':'Checking last confirmed position: ')+fb.moves[0].san+'…');uncertainAt=now}
+  }else{
+   // Last resort: identify a physical (possibly illegal) move from a
+   // disappearing occupied source and changed destination.
+   const nonstandard=physicalMoveCandidates(averaged,latestFlatPixels);
+   const first=nonstandard[0],second=nonstandard[1];
+   if(first&&first.score>=22&&first.score-(second?.score||0)>=Math.max(10,first.score*.25)){
+    const k='illegal:'+first.from+first.to;
+    if(!pendingVerification||pendingVerification.key!==k){
+     pendingVerification={key:k,at:now,firstPhoto:new Uint8ClampedArray(latestFlatPixels)};
+     msg('Possible nonstandard move '+first.from+'–'+first.to+' — verifying static board…');return;
+    }
+    if(now-pendingVerification.at>=160&&stableBoardPhotos(pendingVerification.firstPhoto,latestFlatPixels)){
+     applyPhysicalMove(first,averaged,new Uint8ClampedArray(latestFlatPixels));return;
+    }
+    return;
+   }
+   pendingVerification=null;proposal='';proposalCount=0;
+   if(now-uncertainAt>2200){msg('Uncertain: comparing with last confirmed board; no move recorded.');uncertainAt=now}
+   return;
+  }
+ }else uncertaintySince=0;
+ // First detection is only a proposal. Never record it immediately.
+ // Cross-check a fresh stable observation after a fresh stable frame.
+ if(!pendingVerification||pendingVerification.key!==selected.key){
+  pendingVerification={key:selected.key,at:now,firstScore:selected.score,firstPhoto:new Uint8ClampedArray(latestFlatPixels)};
+  msg('Possible '+selected.moves[0].san+' — verifying against another static image…');
+  return;
+ }
+ if(now-pendingVerification.at<160)return;
+ if(!stableBoardPhotos(pendingVerification.firstPhoto,latestFlatPixels)){
+  pendingVerification=null;
+  motionAt=now;clearSettled();
+  if(now-uncertainAt>1200){msg('Board not static yet — waiting before recording.');uncertainAt=now}
+  return;
+ }
+ const x=selected.moves[0];
+ // Explicitly verify BOTH the source and destination of the same move.
+ // This is critical for nearby-piece confusion such as Nf6 vs f6.
+ const from=sq(x.from),to=sq(x.to);
+ const fromSignal=Math.max(changes[from],pictureChanges[from]*2);
+ const toSignal=Math.max(changes[to],pictureChanges[to]*2);
+ const localThreshold=Math.max(4.5,Math.min(12,noise*1.5));
+ if(fromSignal<Math.max(2.2,localThreshold*.45)||toSignal<Math.max(2.2,localThreshold*.45)){
+  pendingVerification=null;
+  msg('Move not verified: '+x.san+' (source/destination image evidence insufficient). Waiting.');
+  return;
+ }
+ // Compare the new static image against the original reference, not the
+ // tentative frame. Reject if a different legal move has become more likely.
+ if(selected.score<9||selectedConfidence<Math.max(3.5,selected.score*.08)){
+  pendingVerification=null;return;
+ }
+ const pieceCheck=movingPieceColorCheck(x,latestFlatPixels);
+ if(!pieceCheck.ok){pendingVerification=null;msg('Move not recorded: '+pieceCheck.reason);return;}
+ const capCheck=captureDirectionCheck(x,averaged,latestFlatPixels);
+ if(!capCheck.ok){
+  pendingVerification=null;
+  msg('Capture not recorded: '+x.san+' — '+capCheck.reason+'. Checking last confirmed position again.');
+  return;
+ }
+ const snapshot=new Uint8ClampedArray(latestFlatPixels);
+ if(x.promotion){requestPromotion(x,averaged,snapshot);return;}
+ finishMove(x,averaged,snapshot);
+}
+/* Recovery is opt-in, because two-ply inference from visual occupancy alone
+   can be ambiguous. It never silently writes a guessed two-move sequence. */
+function recovery(){
+ if(mode!=='rec'||!acceptedFeatures){msg('Start recording before using recovery.');return}
+ const raw=warp(),obs=occupancyEvidence(raw),oldObs=occupancyEvidence(acceptedFeatures);
+ const aligned=normalizeAgainst(raw,acceptedFeatures),changes=[];
+ for(let q=0;q<64;q++)changes[q]=sd(aligned,acceptedFeatures,q);
+ const results=[];
+ for(const a of game.moves({verbose:true})){
+  const first=new Chess(game.fen());first.move({from:a.from,to:a.to,promotion:a.promotion||'q'});
+  for(const b of first.moves({verbose:true})){
+   const second=new Chess(first.fen());second.move({from:b.from,to:b.to,promotion:b.promotion||'q'});
+   const v=occupancyScore(raw,game,second,obs,oldObs,changes);
+   if(v.positive>=2&&v.negative===0)results.push({a,b,score:v.score});
+  }
+ }
+ results.sort((a,b)=>b.score-a.score);
+ const best=results[0],runner=results[1];
+ if(!best||best.score<35||(runner&&best.score-runner.score<Math.max(14,best.score*.3))){msg('Recovery uncertain. No moves added. Check physical board or use Undo/Resync.');return}
+ const one=best.a.san,two=best.b.san;
+ if(!confirm('Possible missed moves: '+one+' '+two+'. Were BOTH played in this order?'))return;
+ game.move({from:best.a.from,to:best.a.to,promotion:best.a.promotion||'q'});
+ game.move({from:best.b.from,to:best.b.to,promotion:best.b.promotion||'q'});
+ acceptedFeatures=raw;acceptedFlatPixels=new Uint8ClampedArray(latestFlatPixels);saveLastGoodSnapshot(raw,acceptedFlatPixels);refF=raw;prevF=null;quietCount=0;proposal='';proposalCount=0;
+ showMoves();msg('Recovered confirmed moves: '+one+' '+two);beep(880,.15,.4);
+}
+$('recoverBtn').onclick=recovery;
+$('cvToggle').onclick=()=>{cvEnabled=!cvEnabled;$('cvToggle').textContent='OpenCV: '+(cvEnabled?'on':'off');msg(cvEnabled?'OpenCV preprocessing enabled when library is ready.':'OpenCV disabled; using built-in vision.');};
+setInterval(()=>{const ready=!!(window.cv&&window.cv.Mat&&window.cv.GaussianBlur);if(ready!==cvReady){cvReady=ready;$('cvToggle').textContent=ready?'OpenCV: '+(cvEnabled?'on':'off'):(window.cvScriptFailed?'OpenCV: unavailable':'OpenCV: loading…')}},1200);
+
+/* ---------- overlay ---------- */
+function draw(){requestAnimationFrame(draw);
+V.addEventListener('loadedmetadata',()=>document.getElementById('stage').classList.add('active'));oc.clearRect(0,0,O.width,O.height);if(!quad)return;
+const lw=O.width/70,sr=mode=='search'||mode=='manual',col=sr?'rgba(255,59,48,'+(.7+.3*Math.sin(Date.now()/180))+')':'#22c55e';
+oc.lineWidth=mode=='rec'?lw/3:lw;oc.strokeStyle=col;oc.lineJoin='round';oc.beginPath();quad.forEach((p,i)=>i?oc.lineTo(p[0],p[1]):oc.moveTo(p[0],p[1]));oc.closePath();oc.stroke();
+if(!sr){const H=hom([[0,0],[8,0],[8,8],[0,8]],rq());oc.lineWidth=1.5;oc.strokeStyle='rgba(255,255,255,.35)';oc.beginPath();for(let i=1;i<8;i++){let a=ap(H,i,0),b=ap(H,i,8);oc.moveTo(a[0],a[1]);oc.lineTo(b[0],b[1]);a=ap(H,0,i);b=ap(H,8,i);oc.moveTo(a[0],a[1]);oc.lineTo(b[0],b[1])}oc.stroke();const X=[[-1,-1],[9,-1],[9,9],[-1,9]].map(p=>ap(H,p[0],p[1]));oc.save();oc.setLineDash([lw,lw]);oc.strokeStyle='rgba(80,200,255,.9)';oc.lineWidth=lw/4;oc.beginPath();X.forEach((p,i)=>i?oc.lineTo(p[0],p[1]):oc.moveTo(p[0],p[1]));oc.closePath();oc.stroke();oc.restore()}
+else {
+ quad.forEach(p=>{oc.beginPath();oc.arc(p[0],p[1],lw*1.4,0,7);oc.fillStyle='#fff';oc.fill();oc.lineWidth=lw/3;oc.strokeStyle=col;oc.stroke()});
+ for(let i=0;i<4;i++){const a=quad[i],b=quad[(i+1)%4],x=(a[0]+b[0])/2,y=(a[1]+b[1])/2;
+  oc.beginPath();oc.arc(x,y,lw*1.5,0,Math.PI*2);oc.fillStyle='#38bdf8';oc.fill();oc.lineWidth=lw/3;oc.strokeStyle='#fff';oc.stroke();}
+ }}
+// Four corner handles plus four edge-centre handles.
+ // Dragging a midpoint translates BOTH corners of that edge together.
+ let dr=-1,dragStart=null,dragQuad=null;
+ const pt=e=>{const r=O.getBoundingClientRect();return[(e.clientX-r.left)*O.width/r.width,(e.clientY-r.top)*O.height/r.height]};
+ const edgeMid=i=>[(quad[i][0]+quad[(i+1)%4][0])/2,(quad[i][1]+quad[(i+1)%4][1])/2];
+ O.onpointerdown=e=>{
+  if((mode!=='search'&&mode!=='manual')||!quad)return;
+  const p=pt(e),handles=[...quad,...Array.from({length:4},(_,i)=>edgeMid(i))];
+  let b=Infinity;handles.forEach((c,i)=>{const d=Math.hypot(c[0]-p[0],c[1]-p[1]);if(d<b){b=d;dr=i}});
+  if(b>Math.max(22,O.width/15)){dr=-1;return}
+  dragStart=p;dragQuad=quad.map(v=>v.slice());
+  O.setPointerCapture(e.pointerId);
+  if(mode!=='manual'){mode='manual';st(1,'adjusting border');msg('Drag corners or side-middle dots; then press Lock border now.')}
+ };
+ O.onpointermove=e=>{
+  if(dr<0||!dragQuad)return;
+  const p=pt(e),dx=p[0]-dragStart[0],dy=p[1]-dragStart[1];
+  const clamp=v=>[Math.max(0,Math.min(O.width,v[0])),Math.max(0,Math.min(O.height,v[1]))];
+  quad=dragQuad.map(v=>v.slice());
+  if(dr<4)quad[dr]=clamp([dragQuad[dr][0]+dx,dragQuad[dr][1]+dy]);
+  else{
+   const i=dr-4,j=(i+1)%4;
+   // Move the selected border line as a straight segment, preserving its angle.
+   quad[i]=clamp([dragQuad[i][0]+dx,dragQuad[i][1]+dy]);
+   quad[j]=clamp([dragQuad[j][0]+dx,dragQuad[j][1]+dy]);
+  }
+ };
+ O.onpointerup=O.onpointercancel=()=>{dr=-1;dragQuad=null;dragStart=null};
+/* ---------- camera + buttons ---------- */
+let cameraDevices=[],selectedCamera='',torchOn=false,cameraBusy=false;
+const cameraSelect=$('cameraSelect'),flashBtn=$('flashBtn');
+async function listCameras(){
+ try{const devices=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');cameraDevices=devices;
+ const active=stream?.getVideoTracks()[0]?.getSettings()?.deviceId||'';
+ cameraSelect.replaceChildren();
+ const auto=document.createElement('option');auto.value='';auto.textContent='Camera: automatic ('+(facing==='user'?'front':'rear')+')';cameraSelect.append(auto);
+ devices.forEach((d,i)=>{const opt=document.createElement('option');opt.value=d.deviceId;opt.textContent=d.label||'Camera '+(i+1);cameraSelect.append(opt)});
+ cameraSelect.value=selectedCamera&&devices.some(d=>d.deviceId===selectedCamera)?selectedCamera:'';
+ if(!selectedCamera&&active){const opt=[...cameraSelect.options].find(o=>o.value===active);if(opt)opt.textContent+=' (active)'}
+ }catch(e){console.warn('Camera enumeration:',e)}
+}
+function updateFlash(){const track=stream?.getVideoTracks()[0];let supported=false;
+ try{supported=!!track?.getCapabilities?.().torch}catch(e){}
+ torchOn=false;flashBtn.disabled=!supported;flashBtn.textContent=supported?'Flash: off':'Flash: unavailable';
+}
+async function cam(){cancelPromotion();if(cameraBusy)return;cameraBusy=true;const oldStream=stream;
+ try{if(window.speechSynthesis)speechSynthesis.speak(new SpeechSynthesisUtterance(''));
+ ac=ac||new(window.AudioContext||window.webkitAudioContext)();await ac.resume();
+ // Stop the previous camera before opening another; some phones cannot stream two cameras.
+ if(oldStream){oldStream.getTracks().forEach(t=>t.stop());stream=null;V.srcObject=null}
+ const constraints={width:{ideal:1280},height:{ideal:720}};
+ if(selectedCamera)constraints.deviceId={exact:selectedCamera};else constraints.facingMode={ideal:facing};
+ try{stream=await navigator.mediaDevices.getUserMedia({video:constraints,audio:false})}
+ catch(e){if(!selectedCamera)throw e;selectedCamera='';stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:facing}},audio:false})}
+ V.srcObject=stream;await V.play();
+ const w=V.videoWidth,h=V.videoHeight;O.width=w;O.height=h;sc=Math.min(1,640/w);W.width=w*sc|0;W.height=h*sc|0;
+ const side=Math.min(w,h)*.8,cx=w/2,cy=h/2;
+ quad=[[cx-side/2,cy-side/2],[cx+side/2,cy-side/2],[cx+side/2,cy+side/2],[cx-side/2,cy+side/2]];
+ // Camera changes invalidate image calibration, but preserve already recorded moves.
+ base=null;occModel=null;occModelReady=false;$('modelStatus').textContent='Occupancy model: waiting for calibration';refF=null;prevF=null;thrQ=null;stable=0;rot=0;startSearch();
+ await listCameras();updateFlash();
+ }catch(e){flashBtn.disabled=true;flashBtn.textContent='Flash: unavailable';msg('Camera error: '+e.message+'. Use HTTPS or localhost and allow camera permission.')}
+ finally{cameraBusy=false}
+}
+cameraSelect.onchange=()=>{selectedCamera=cameraSelect.value;if(stream)cam()};
+flashBtn.onclick=async()=>{const track=stream?.getVideoTracks()[0];if(!track)return;
+ try{const next=!torchOn;await track.applyConstraints({advanced:[{torch:next}]});torchOn=next;flashBtn.textContent='Flash: '+(torchOn?'on':'off')}
+ catch(e){flashBtn.disabled=true;flashBtn.textContent='Flash: unavailable';msg('This camera/browser does not allow flashlight control: '+e.message)}
+};
+function syncEditedPosition(){
+ resetTracking();refF=null;prevF=null;stable=0;unclear=0;
+ hasIllegalMoves=physicalMoveLog.some(x=>x.illegal);
+ showMoves();drawPos(null);
+ if(mode==='rec')msg('Move list edited. Ensure physical board matches the displayed position before continuing.');
+}
+function deleteRecordedLast(){
+ cancelPromotion();
+ if(!physicalMoveLog.length){msg('No recorded move to delete.');return}
+ const last=physicalMoveLog.pop();
+ if(!game.load(last.previousFen)){physicalMoveLog.push(last);msg('Could not restore the previous board position.');return}
+ syncEditedPosition();msg('Deleted last move: '+last.label+'. Match the physical board before continuing.');
+}
+$('deleteLastMove').onclick=deleteRecordedLast;
+$('addManualMove').onclick=()=>{
+ if(!game){msg('Start a game before entering a move.');return}
+ const raw=$('manualMove').value.trim();if(!raw)return;
+ cancelPromotion();
+ const previousFen=game.fen();let m=null;
+ try{m=game.move(raw,{sloppy:true})}catch(e){}
+ if(!m){
+  const coord=raw.replace(/[\s-]/g,'').match(/^([a-h][1-8])x?([a-h][1-8])([qrbn])?$/i);
+  if(coord){try{m=game.move({from:coord[1].toLowerCase(),to:coord[2].toLowerCase(),promotion:(coord[3]||'q').toLowerCase()})}catch(e){}}
+  if(!m&&coord){
+   const from=coord[1].toLowerCase(),to=coord[2].toLowerCase();
+   const b=game.board(),moving=b[sq(from)>>3][sq(from)&7];
+   if(!moving){msg('No piece on '+from+'.');return}
+   const target=b[sq(to)>>3][sq(to)&7];
+   if(target&&target.color===moving.color){msg('Cannot place a piece on a friendly piece.');return}
+   if(applyPhysicalMove({from,to,captured:target?.type||null},null,null)){
+    $('manualMove').value='';syncEditedPosition();msg('Manually recorded illegal physical move: '+from+' to '+to);return;
+   }
+  }
+ }
+ if(!m){msg('Move not understood. Enter SAN (Nf3) or coordinates (g1f3).');return}
+ physicalMoveLog.push({label:m.san,fen:game.fen(),previousFen,illegal:false});
+ $('manualMove').value='';syncEditedPosition();msg('Manually recorded: '+m.san);
+};
+$('manualMove').addEventListener('keydown',e=>{if(e.key==='Enter')$('addManualMove').click()});
+function illegalFenText(){return physicalMoveLog.filter(x=>x.illegal).map((x,i)=>(i+1)+'. '+x.label+'\n'+x.fen).join('\n\n')}
+function refreshIllegalExport(){const t=illegalFenText();$('exportIllegalFen').style.display=t?'':'none';$('illegalFenBox').style.display=t?'block':'none';$('illegalFenBox').value=t}
+$('exportIllegalFen').onclick=()=>{const t=illegalFenText();if(!t)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:'text/plain'}));a.download='illegal-move-positions.txt';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)};
+$('whiteName').addEventListener('input',()=>{});$('blackName').addEventListener('input',()=>{});
+$('b1').onclick=cam;
+$('b2').onclick=()=>{if(stream)startSearch()};
+$('b3').onclick=()=>{if(stream&&(mode=='search'||mode=='manual'))lock(false)};
+$('viewSide').onchange=e=>{rot=Number(e.target.value);if(stream&&quad){mode='scan';n=0;acc=null;refF=null;prevF=null;msg('Camera side selected. Clear the board temporarily to recalibrate empty squares.');}};
+$('b5').onclick=()=>{if(mode=='pieces'){forceStart=1;pst=Math.max(pst,4);msg('Starting with the current view…');return}refF=null;prevF=null;stable=0;unclear=0;resetTracking();msg('Resynced – make sure the real board matches the on-screen position, then make your next move.')};
+$('redoRecording').onclick=()=>{
+ if(!stream||!base||!quad||!['pieces','rec'].includes(mode)){
+  msg('First finish empty-board calibration and lock the board. Re Do Recording keeps that calibration.');return;
+ }
+ // Preserve the calibrated empty squares, locked corners and camera selection.
+ // Discard the old game and re-verify the physical standard starting position.
+ newGame();$('pgnbox').value='';$('pgnbox').style.display='none';
+ mode='pieces';ready=0;colorChk=1;pst=0;prevF=null;refF=null;resetTracking();
+ thrQ=null;forceStart=0;stable=0;unclear=0;lastOk=0;Nz=1.5;
+ st(1,'locked ✓','ok');st(2,'64/64 ✓','ok');
+ st(3,'checking starting position…');st(4,'waiting');prog(0);
+ drawPos(null,true);
+ msg('Recording cleared. Restore all 32 pieces to the standard starting position, remove your hands and wait for READY. Empty-board calibration and camera settings are preserved.');
+ beep(550,.12,.4);beep(660,.15,.4,'sine',.16);
+};
+$('b8').onclick=()=>{if(cameraDevices.length>1){const active=stream?.getVideoTracks()[0]?.getSettings()?.deviceId;const idx=cameraDevices.findIndex(d=>d.deviceId===(selectedCamera||active));selectedCamera=cameraDevices[(idx+1+cameraDevices.length)%cameraDevices.length].deviceId}else{selectedCamera='';facing=facing==='environment'?'user':'environment'}if(stream)cam()};
+$('b9').onclick=e=>{snd=!snd;e.target.textContent='Sound: '+(snd?'on':'off')};
+$('b11').onclick=e=>{voice=!voice;e.target.textContent='Announce moves: '+(voice?'on':'off');if(voice)spk('Announcing moves on')};
+$('b15').onclick=e=>{showDiagnostics=!showDiagnostics;e.target.textContent='Yellow diagnostics: '+(showDiagnostics?'on':'off');if(!showDiagnostics)drawPos(null)};
+$('b12').onclick=()=>{if(!game||(!game.history().length&&!physicalMoveLog.length)){msg('No moves recorded yet.');return}const p=getPGN(),b=$('pgnbox');b.value=p;b.style.display='block';
+try{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([p],{type:'application/x-chess-pgn'}));a.download='chess-game.pgn';document.body.appendChild(a);a.click();a.remove()}catch(e){}
+try{navigator.clipboard.writeText(p)}catch(e){}msg('PGN exported (also copied). If no file downloaded, copy it from the box above.')};
+
+const loop=()=>{const t=Date.now();if(stream&&V.videoWidth&&W.width){wc.drawImage(V,0,0,W.width,W.height);try{({search:searchStep,scan:scanStep,pieces:pieceStep,rec:recStep}[mode]||(()=>{}))()}catch(e){console.error(e)}}
+setTimeout(loop,Math.max(20,(mode=='rec'?65:250)-(Date.now()-t)))};loop();
+requestAnimationFrame(draw);
+</script></body></html>
