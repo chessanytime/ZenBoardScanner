@@ -164,7 +164,7 @@ for(let q=0;q<64;q++){for(let k=0;k<48;k++)A[q*K+k]=Math.min(255,F[q*K+k]*g);A[q
 function startSearch(m){mode=m||'search';found=0;lastQ=null;t0=Date.now();st(1,m=='manual'?'drag corners, then Lock':'searching…');st(2,'waiting');st(3,'waiting');st(4,'waiting');prog(0);
 msg(m=='manual'?'Drag the 4 white dots onto the board corners, then tap “Lock border now”.':'Searching for the board… hold steady, all 4 corners in view. You can also drag the dots yourself.')}
 function extOut(){const H=hom([[0,0],[8,0],[8,8],[0,8]],rq());return[[-1,-1],[9,-1],[9,9],[-1,9]].some(p=>{const[x,y]=ap(H,p[0],p[1]);return x<0||y<0||x>O.width||y>O.height})}
-function lock(a){if(!quad||!stream)return;mode='rec';if(!game)newGame();resetTracking();st(1,'locked ✓','ok');st(2,'refining photo…');st(3,'verifying position…');st(4,'waiting');prog(.4);$('modelStatus').textContent='Photo occupancy: checking the starting position';msg($('labAuto').checked?'Border locked. Keep hands away while the starting photo is verified.':'Border locked. Tap Capture & Analyze now to verify the starting position.');a?foundSnd():beep(660,.12,.45);}
+function lock(a){if(!quad||!stream)return;mode='rec';if(!game)newGame();resetTracking();labMode='rec';labGeometry=JSON.stringify(rq());st(1,'locked ✓','ok');st(2,'refining photo…');st(3,'verifying position…');st(4,'waiting');prog(.4);$('modelStatus').textContent='Photo occupancy: checking the starting position';msg($('labAuto').checked?'Border locked. Keep hands away while the starting photo is verified.':'Border locked. Tap Capture & Analyze now to verify the starting position.');a?foundSnd():beep(660,.12,.45);}
 function detectByContours(){
  if(!(window.cv&&cv.Mat&&cv.findContours))return null;
  let src,gray,blur,edges,contours,hierarchy;
@@ -1421,15 +1421,20 @@ function labCommit(m,photo,fp,direct=null,route='Original Camera Lab',observed=n
 function labAnalyze(forceBaseline=false,manual=false){
  if(mode!=='rec'||!game||!stream){labUI('Finish board calibration and starting-position verification first.');return;}
  const p=labPhoto(640,true);if(!p){labUI('Cannot refine photo; check all four locked corners.');return;}
- st(2,'64 squares ✓','ok');const fp=labFingerprint(p,640),algorithm=labAlgorithm(),direct=algorithm==='original'?null:labObs(p,'whole');let obs=algorithm==='direct'?direct:algorithm==='hybrid'&&labReference&&!forceBaseline?direct:labObs(p);if(labReference)labDraw('labPrevious',labReference.photo);labLastPhoto=p;labDraw('labCurrent',p);labRenderObs(obs);
+ st(2,'64 squares ✓','ok');const fp=labFingerprint(p,640),algorithm=labAlgorithm();
+ // Startup is identical to the last working Camera Lab for every algorithm.
+ // The alternative classifier is enabled only after the first verified photo.
+ const settingUp=forceBaseline||!labReference||labFen!==game.fen();
+ const direct=!settingUp&&algorithm!=='original'?labObs(p,'whole'):null;
+ let obs=direct||labObs(p);if(labReference)labDraw('labPrevious',labReference.photo);labLastPhoto=p;labDraw('labCurrent',p);labRenderObs(obs);
  const cur=Logic.occFromChess(game);let none=Logic.dist(cur,obs.occ);
- let observation=algorithm+':'+Array.from(obs.occ).join(''),now=performance.now();
+ let observation=(settingUp?'setup':algorithm)+':'+Array.from(obs.occ).join(''),now=performance.now();
  if(!manual&&observation!==labLastObservation){labLastObservation=observation;labObservationSince=now;labVerify=null;labPending=null;$('labCandidates').replaceChildren();labUI('Board change detected · waiting for a stable photo.');return;}
  if(!manual&&now-labObservationSince<Math.max(300,Number($('labDelay').value)||500))return;
- if(forceBaseline||!labReference||labFen!==game.fen()){
-  if(none!==0&&!forceBaseline){st(3,none+' mismatches','bad');st(4,'waiting');labUI('Reference photo disagrees on '+none+' squares. Check orientation and position, adjust threshold or confirm the physical position manually.');return;}
+ if(settingUp){
+  if(none!==0&&!forceBaseline){st(3,none+' mismatches','bad');st(4,'waiting');labUI('Reference photo disagrees on '+none+' squares. Check orientation and position, adjust threshold or confirm the physical position manually.');msg('Board locked — verifying starting pieces. See the occupancy grid for mismatches.');return;}
   if(forceBaseline&&none!==0&&!confirm('The occupancy test disagrees on '+none+' squares. Is the physical position definitely correct?'))return;
-  labAcceptPhoto(p,fp,direct);st(3,none===0?'position verified ✓':'confirmed by user','ok');st(4,'recording – play!','ok');prog(1);$('modelStatus').textContent='Photo occupancy: ready';msg('READY – play one move at a time.');readySnd();spk('Board ready. Start playing.');labUI('Reference photo captured. Play one move, then remove your hands.');return;
+  labAcceptPhoto(p,fp);st(3,none===0?'position verified ✓':'confirmed by user','ok');st(4,'recording – play!','ok');prog(1);$('modelStatus').textContent='Photo occupancy: ready';msg('READY – play one move at a time.');readySnd();spk('Board ready. Start playing.');labUI('Reference photo captured. Play one move, then remove your hands.');return;
  }
  if(game.game_over())return;
 
