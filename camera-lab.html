@@ -1557,7 +1557,7 @@ function labPixelCapture(candidates,before,after,mover){
  // For automatic recording, require a clear lead rather than a one-pixel
  // advantage. A strong opposite-colour gap can resolve a tall-piece example.
  const clear=next?(next.opposite-best.opposite>=10||(next.opposite===best.opposite&&best.score-next.score>=5&&best.score>=60)):(candidates.length===1||best.score>=60);
- return {move:clear?best.m:null,details,reason:clear?'Preferred '+best.m.to+' (fewest '+(mover==='w'?'black':'white')+' pixels).':'Pixel result uncertain; using existing capture checks.'};
+ return {move:clear?best.m:null,details,reason:clear?'Preferred '+best.m.to+' (fewest '+(mover==='w'?'black':'white')+' pixels).':'Pixel result uncertain; rescan or confirm a legal capture.'};
 }
 function labPixelStatus(text){$('labPixelStatus').textContent=text;}
 function labColorCapture(ties,colors,chess,model){
@@ -1644,7 +1644,7 @@ function labBaseCorrect(raw,expected,scan,previousRaw=null,colors=null){
  }
  return {occ,suppressed,persistent};
 }
-function labBaseSupportsMove(m,obs,current,reference){
+function labBaseSupportsMove(m,obs,current,reference,pixelOnly=false){
  if(!obs.suppressed.length)return true;
  const from=Logic.sqIndex(m.from),to=Logic.sqIndex(m.to),next=Logic.predicted(current,m);
  // An assisted automatic move needs a real destination base, disappearance
@@ -1652,8 +1652,8 @@ function labBaseSupportsMove(m,obs,current,reference){
  if(obs.suppressed.some(i=>!obs.persistent.includes(i))){
   if(!reference?.base?.anchors[from]||obs.base.anchors[from]||obs.occ[from]||!obs.base.anchors[to])return false;
   for(let i=0;i<64;i++)if(!current[i]&&next[i]&&!obs.base.anchors[i])return false;
- }else if(obs.raw[from]||!obs.raw[to]||!obs.colors.valid||obs.colors.change[to]<12)return false;
- if(m.captured&&!m.flags.includes('e')&&(obs.colors.states[to]!==m.color||Math.abs(obs.colors.margin[to])<.30||obs.colors.change[to]<12))return false;
+ }else if(obs.raw[from]||!obs.raw[to]||(!pixelOnly&&(!obs.colors.valid||obs.colors.change[to]<12)))return false;
+ if(!pixelOnly&&m.captured&&!m.flags.includes('e')&&(obs.colors.states[to]!==m.color||Math.abs(obs.colors.margin[to])<.30||obs.colors.change[to]<12))return false;
  return true;
 }
 function labObs(p,allowBase=true){const threshold=Math.max(.1,Math.min(2,Number($('labThreshold').value)||.5));const {grid,scores}=Logic.classicalGrid(p,640,threshold),raw=Logic.gridToOcc(grid,'bottom'),model=labFen===game?.fen()?labReference?.colorModel:null,colors=labColorRead(p,raw,model),base=allowBase&&model?labBaseScan(p,model,rot,raw):null,corrected=base?labBaseCorrect(raw,Logic.occFromChess(game),base,labReference.raw,colors):{occ:raw,suppressed:[],persistent:[]};for(const i of corrected.suppressed)colors.states[i]='0';return {grid,scores,raw,occ:corrected.occ,base,suppressed:corrected.suppressed,persistent:corrected.persistent,colors};}
@@ -1692,7 +1692,7 @@ function labAnalyze(forceBaseline=false,manual=false){
  if(pixelCandidates.length){
   const pixel=labPixelCapture(pixelCandidates,labReference.photo,p,game.turn());
   labPixelStatus('Pixel Test: '+pixel.reason+(pixel.details.length?' | '+pixel.details.join(' · '):''));
-  if(pixel.move&&labBaseSupportsMove(pixel.move,obs,cur,labReference)){
+  if(pixel.move&&labBaseSupportsMove(pixel.move,obs,cur,labReference,true)){
    const key='pixel:'+pixel.move.from+pixel.move.to;
    if(manual||(labVerify?.colorKey===key&&now-labVerify.since>=300)){
     labCommit(pixel.move,p,fp);labUI('Recorded '+pixel.move.san+' · capture resolved by Pixel Test.');return;
@@ -1701,13 +1701,15 @@ function labAnalyze(forceBaseline=false,manual=false){
    labPending=null;$('labCandidates').replaceChildren();labUI('Verifying Pixel Test capture: '+pixel.move.san+'…');return;
   }
  }else if(pixelOn)labPixelStatus('Pixel Test: waiting for an ordinary capture (one vacant, none newly occupied).');
- if(best.d===0&&ties.length===1&&!best.m.promotion&&labBaseSupportsMove(best.m,obs,cur,labReference)){
+ // Pixel mode does not fall back to the old learned-colour capture test.
+ // An uncertain pixel-only capture proceeds to manual candidates/rescan.
+ if(!pixelCandidates.length&&best.d===0&&ties.length===1&&!best.m.promotion&&labBaseSupportsMove(best.m,obs,cur,labReference)){
   if(!obs.suppressed.length||manual){labCommit(best.m,p,fp);return;}
   const key='base:'+best.m.from+best.m.to;
   if(labVerify?.colorKey===key&&now-labVerify.since>=300){labCommit(best.m,p,fp);labUI('Recorded '+best.m.san+' · height projection filtered by base evidence.');return;}
   if(labVerify?.colorKey!==key)labVerify={colorKey:key,since:now};labPending=null;$('labCandidates').replaceChildren();labUI('Checking piece base: '+best.m.san+'…');return;
  }
- const colorMove=labColorCapture(ties,obs.colors,game,labReference.colorModel);
+ const colorMove=pixelCandidates.length?null:labColorCapture(ties,obs.colors,game,labReference.colorModel);
  if(colorMove&&labBaseSupportsMove(colorMove,obs,cur,labReference)){
   const key=colorMove.from+colorMove.to;
   if(manual||(labVerify?.colorKey===key&&now-labVerify.since>=300)){labCommit(colorMove,p,fp);labUI('Recorded '+colorMove.san+' · capture resolved by piece color.');return;}
@@ -1722,7 +1724,7 @@ function labAnalyze(forceBaseline=false,manual=false){
  const options=ranked.filter(x=>x.d===best.d).slice(0,12);
  for(const x of options){const moves=x.m.promotion?game.moves({verbose:true}).filter(m=>m.from===x.m.from&&m.to===x.m.to):[x.m];for(const m of moves){const b=document.createElement('button');b.textContent=m.san+' ('+x.d+' mismatch)';b.onclick=()=>{if(labPending&&labPending.fen===game.fen())labCommit(m,p,fp)};dst.append(b);}}
  const retry=document.createElement('button');retry.textContent='Rescan / reject';retry.onclick=()=>{labPending=null;dst.replaceChildren();labLastObservation=null;labObservationSince=0;labUI('Rescanning automatically.');};dst.append(retry);
- labUI('Ambiguous occupancy or piece color ('+best.d+' mismatches). Confirm the actual move, or rescan.');
+ labUI(pixelCandidates.length?'Pixel Test uncertain. Confirm the actual capture, or rescan.':'Ambiguous occupancy or piece color ('+best.d+' mismatches). Confirm the actual move, or rescan.');
 }
 function labStep(){
  if(mode!==labMode){labMode=mode;labReset();}
