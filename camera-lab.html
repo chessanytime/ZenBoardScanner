@@ -1408,18 +1408,6 @@ const labSize=640, labRaw=document.createElement('canvas'),labRawCtx=labRaw.getC
 let labVerify=null,labLastObservation=null,labObservationSince=0,labReference=null,labLastFrame=null,labStableAt=0,labLastCheck=0,labPending=null,labLastPhoto=null,labFen=null,labMode='',labGeometry='',labMotion=false,labUndoRestore=null;
 const labUI=t=>{$('labStatus').textContent=t};
 function labReset(){labLastObservation=null;labObservationSince=0;labVerify=null;labReference=null;labLastFrame=null;labStableAt=0;labPending=null;labFen=null;labMotion=false;labUndoRestore=null;$('labCandidates').replaceChildren();$('labPrevious').getContext('2d').clearRect(0,0,640,640);}
-// Camera Lab only: match makeboardgrey.html's green removal.
-// The warped photo is a fresh RGBA array, so no raw camera pixels are modified.
-function labRemoveGreen(pixels){
- const sensitivity=4, grey=128;
- for(let i=0;i<pixels.length;i+=4){
-  const r=pixels[i],g=pixels[i+1],b=pixels[i+2];
-  if(g>r+sensitivity&&g>b+sensitivity){
-   pixels[i]=grey;pixels[i+1]=grey;pixels[i+2]=grey;
-  }
- }
- return pixels;
-}
 function labPhoto(size,full=false){
  if(!quad||!V.videoWidth||!W.width||!stream)return null;
  let src,w,h;
@@ -1427,7 +1415,7 @@ function labPhoto(size,full=false){
  else{w=W.width;h=W.height;src=wc.getImageData(0,0,w,h).data;}
  const points=rq().map(([x,y])=>[x/V.videoWidth,y/V.videoHeight]);
  if(points.some(p=>p.some(v=>!Number.isFinite(v)||v<0||v>1)))return null;
- return labRemoveGreen(Logic.warp(src,w,h,points,size));
+ return Logic.warp(src,w,h,points,size);
 }
 function labDraw(id,pixels){const can=$ (id),ctx=can.getContext('2d');ctx.putImageData(new ImageData(new Uint8ClampedArray(pixels),640,640),0,0);}
 function labFingerprint(p,size){const a=new Float32Array(64*16);let n=0;for(let r=0;r<8;r++)for(let c=0;c<8;c++)for(let y=1;y<=4;y++)for(let x=1;x<=4;x++){const px=Math.floor((c+x/5)*size/8),py=Math.floor((r+y/5)*size/8),i=(py*size+px)*4;a[n++]=(p[i]+p[i+1]+p[i+2])/3;}return a;}
@@ -1675,4 +1663,3 @@ const loop=()=>{if(mode!=='rec'&&labMode==='rec'){labMode=mode;labReset();}const
 setTimeout(loop,Math.max(20,(mode=='rec'?65:250)-(Date.now()-t)))};loop();
 requestAnimationFrame(draw);
 </script></body></html>
-
