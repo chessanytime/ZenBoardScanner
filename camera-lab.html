@@ -1067,12 +1067,42 @@ function syncEditedPosition(){
  showMoves();drawPos(null);
  if(mode==='rec')msg('Move list edited. Ensure physical board matches the displayed position before continuing.');
 }
+function rebuildRecordedHistory(entries,initialFen){
+ // FEN alone cannot preserve move history. Replay the confirmed log when
+ // an illegal physical move or an earlier FEN load has cleared engine history.
+ try{
+  const rebuilt=new Chess();if(rebuilt.fen()!==initialFen&&!rebuilt.load(initialFen))return null;
+  for(const e of entries){
+   if(rebuilt.fen()!==e.previousFen)return null;
+   if(e.illegal){if(!rebuilt.load(e.fen))return null;}
+   else if(!rebuilt.move(e.label)||rebuilt.fen()!==e.fen)return null;
+  }
+  return rebuilt;
+ }catch(e){return null;}
+}
 function deleteRecordedLast(){
  cancelPromotion();
- if(!physicalMoveLog.length){msg('No recorded move to delete.');return}
- const last=physicalMoveLog.pop();
- if(!game.load(last.previousFen)){physicalMoveLog.push(last);msg('Could not restore the previous board position.');return}
- syncEditedPosition();msg('Deleted last move: '+last.label+'. Match the physical board before continuing.');
+ if(!game||!physicalMoveLog.length){msg('No recorded move to delete.');return}
+ const last=physicalMoveLog[physicalMoveLog.length-1],remaining=physicalMoveLog.slice(0,-1);
+ const rebuilt=rebuildRecordedHistory(remaining,physicalMoveLog[0].previousFen);
+ if(!rebuilt||rebuilt.fen()!==last.previousFen){msg('Could not restore the previous board position. Recorded moves are unchanged.');return;}
+ const oldColors=labColorPosition(game),oldModel=labReference?.colorModel||labUndoRestore?.model||null;
+ // For normal legal games use undo(), not load(), so the PGN stays intact.
+ // If history was already lost, or the last physical move was illegal, use the
+ // validated replay. Do not remove the log entry until restoration succeeds.
+ const canUndo=!last.illegal&&game.fen()===last.fen&&game.history().length===rebuilt.history().length+1;
+ const undone=canUndo?game.undo():null;
+ if(!undone||game.fen()!==last.previousFen||game.history().length!==rebuilt.history().length)game=rebuilt;
+ physicalMoveLog.pop();
+ const restoredColors=labColorPosition(game),flips=restoredColors.flatMap((color,i)=>color!=='0'&&oldColors[i]!=='0'&&color!==oldColors[i]?[i]:[]);
+ syncEditedPosition();
+ if($('pgnbox').style.display==='block')$('pgnbox').value=getPGN();
+ if(mode==='rec'){
+  labUndoRestore={fen:game.fen(),model:oldModel,flips,colors:restoredColors};
+  st(3,'restore previous position…');st(4,'paused after undo');
+  labUI('Last move removed. Restore the physical board to the displayed position before resuming.');
+ }
+ msg('Deleted last move: '+last.label+'. Earlier moves preserved. Match the physical board before continuing.');
 }
 $('deleteLastMove').onclick=deleteRecordedLast;
 $('addManualMove').onclick=()=>{
@@ -1375,9 +1405,9 @@ const Logic = (() => {
 
 
 const labSize=640, labRaw=document.createElement('canvas'),labRawCtx=labRaw.getContext('2d',{willReadFrequently:true});
-let labVerify=null,labLastObservation=null,labObservationSince=0,labReference=null,labLastFrame=null,labStableAt=0,labLastCheck=0,labPending=null,labLastPhoto=null,labFen=null,labMode='',labGeometry='',labMotion=false;
+let labVerify=null,labLastObservation=null,labObservationSince=0,labReference=null,labLastFrame=null,labStableAt=0,labLastCheck=0,labPending=null,labLastPhoto=null,labFen=null,labMode='',labGeometry='',labMotion=false,labUndoRestore=null;
 const labUI=t=>{$('labStatus').textContent=t};
-function labReset(){labLastObservation=null;labObservationSince=0;labVerify=null;labReference=null;labLastFrame=null;labStableAt=0;labPending=null;labFen=null;labMotion=false;$('labCandidates').replaceChildren();$('labPrevious').getContext('2d').clearRect(0,0,640,640);}
+function labReset(){labLastObservation=null;labObservationSince=0;labVerify=null;labReference=null;labLastFrame=null;labStableAt=0;labPending=null;labFen=null;labMotion=false;labUndoRestore=null;$('labCandidates').replaceChildren();$('labPrevious').getContext('2d').clearRect(0,0,640,640);}
 function labPhoto(size,full=false){
  if(!quad||!V.videoWidth||!W.width||!stream)return null;
  let src,w,h;
@@ -1483,6 +1513,14 @@ function labAnalyze(forceBaseline=false,manual=false){
  if(!manual&&observation!==labLastObservation){labLastObservation=observation;labObservationSince=now;labVerify=null;labPending=null;$('labCandidates').replaceChildren();labUI('Board change detected · waiting for a stable photo.');return;}
  if(!manual&&now-labObservationSince<Math.max(300,Number($('labDelay').value)||500))return;
  if(forceBaseline||!labReference||labFen!==game.fen()){
+  if(labUndoRestore?.fen===game.fen()){
+   if(none!==0){st(3,none+' mismatches','bad');st(4,'paused after undo');labUI('Restore the undone move on the physical board. '+none+' square(s) disagree; recording is paused.');return;}
+   if(labUndoRestore.flips.length){
+    const restored=labColorRead(p,obs.occ,labUndoRestore.model),wrong=labUndoRestore.flips.filter(i=>restored.states[i]!==labUndoRestore.colors[i]);
+    if(wrong.length&&(!forceBaseline||!confirm('Verify the captured piece(s) have been put back on '+wrong.map(Logic.sqName).join(', ')+'. Is the physical position definitely correct?'))){st(4,'paused after undo');labUI('Restore the captured piece on '+wrong.map(Logic.sqName).join(', ')+'. Waiting for correct piece color or explicit confirmation.');return;}
+   }
+   labUndoRestore=null;
+  }
   if(none!==0&&!forceBaseline){st(3,none+' mismatches','bad');st(4,'waiting');labUI('Reference photo disagrees on '+none+' squares. Check orientation and position, adjust threshold or confirm the physical position manually.');return;}
   if(forceBaseline&&none!==0&&!confirm('The occupancy test disagrees on '+none+' squares. Is the physical position definitely correct?'))return;
   labAcceptPhoto(p,fp);obs.colors=labColorRead(p,obs.occ,labReference.colorModel);labRenderObs(obs);st(3,none===0?'position verified ✓':'confirmed by user','ok');st(4,'recording – play!','ok');prog(1);$('modelStatus').textContent='Photo occupancy: ready';msg('READY – play one move at a time.');readySnd();spk('Board ready. Start playing.');labUI('Reference photo captured. Play one move, then remove your hands.');return;
