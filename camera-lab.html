@@ -37,7 +37,7 @@ details.panel{padding:0}details>summary{padding:15px 16px;cursor:pointer;list-st
 <div class="row"><label class="field">Occupancy threshold <input id="labThreshold" type="number" min="0.1" max="2" step="0.05" value="0.5"></label><label class="field">Stable delay (ms) <input id="labDelay" type="number" min="300" max="2000" step="100" value="500"></label></div>
 <div class="actions"><button id="labCapture" class="p">Capture &amp; Analyze now</button><button id="labBaseline">Confirm starting / current photo</button></div>
 <p id="labStatus" role="status" class="help">Start with all 32 pieces already in their standard positions. The first verified photo becomes the reference.</p><div class="cv"><figure><figcaption>Previous confirmed photo</figcaption><canvas id="labPrevious" class="sq" width="640" height="640"></canvas></figure><figure><figcaption>Latest refined photo</figcaption><canvas id="labCurrent" class="sq" width="640" height="640"></canvas></figure></div>
-<div class="row"><button id="labDownload">Download latest photo</button></div><div id="labGrid" style="display:grid;grid-template-columns:repeat(8,1fr);gap:2px;margin:12px 0"></div><div id="labCandidates" class="actions"></div><p class="help">Green squares = occupied; dark squares = empty; red border = mismatch against the confirmed position. If occupancy cannot uniquely identify a move, choose the actual legal move below.</p><hr style="border:0;border-top:1px solid var(--line);margin:16px 0"><div class="panel-top"><h2>Recorded game</h2><span class="tag">PGN</span></div><div class="move-label">Last move</div><div id="last">—</div><div id="moves">Recorded moves will appear here</div><div class="actions"><input id="manualMove" placeholder="Enter move: e4, Nf3, e2e4" aria-label="Manual chess move"><button id="addManualMove">Add move</button><button id="deleteLastMove">Undo move</button><button id="b5">Resync board</button><button id="recoverBtn">Recover missed move</button><button id="redoRecording" class="p">Restart recording</button></div><button id="b12" class="p">Export PGN file</button><textarea id="pgnbox" readonly></textarea><textarea id="illegalFenBox" readonly style="display:none" aria-label="Illegal move FEN positions"></textarea><button id="exportIllegalFen" style="display:none">Export illegal-move FEN</button><p class="help">Enter SAN or coordinate moves. Coordinate notation also supports recording physically played illegal moves.</p></section>
+<div class="row"><button id="labDownload">Download latest photo</button></div><div id="labGrid" style="display:grid;grid-template-columns:repeat(8,1fr);gap:2px;margin:12px 0"></div><div id="labCandidates" class="actions"></div><p class="help">W = white piece; B = black piece; ? = occupied, color uncertain; gray = empty. Red border = occupancy mismatch. Piece color helps resolve captures with identical occupancy. If evidence is uncertain, choose the actual legal move below.</p><hr style="border:0;border-top:1px solid var(--line);margin:16px 0"><div class="panel-top"><h2>Recorded game</h2><span class="tag">PGN</span></div><div class="move-label">Last move</div><div id="last">—</div><div id="moves">Recorded moves will appear here</div><div class="actions"><input id="manualMove" placeholder="Enter move: e4, Nf3, e2e4" aria-label="Manual chess move"><button id="addManualMove">Add move</button><button id="deleteLastMove">Undo move</button><button id="b5">Resync board</button><button id="recoverBtn">Recover missed move</button><button id="redoRecording" class="p">Restart recording</button></div><button id="b12" class="p">Export PGN file</button><textarea id="pgnbox" readonly></textarea><textarea id="illegalFenBox" readonly style="display:none" aria-label="Illegal move FEN positions"></textarea><button id="exportIllegalFen" style="display:none">Export illegal-move FEN</button><p class="help">Enter SAN or coordinate moves. Coordinate notation also supports recording physically played illegal moves.</p></section>
 <details class="panel player-panel"><summary>Player details (optional)</summary><div class="detail-body"><div class="row"><label class="field">White player<input id="whiteName" placeholder="Name"></label><label class="field">Black player<input id="blackName" placeholder="Name"></label></div></div></details>
 </div></main>
 <div id="promotionPrompt" role="dialog" aria-modal="true" aria-labelledby="promotionTitle">
@@ -1390,9 +1390,89 @@ function labPhoto(size,full=false){
 function labDraw(id,pixels){const can=$ (id),ctx=can.getContext('2d');ctx.putImageData(new ImageData(new Uint8ClampedArray(pixels),640,640),0,0);}
 function labFingerprint(p,size){const a=new Float32Array(64*16);let n=0;for(let r=0;r<8;r++)for(let c=0;c<8;c++)for(let y=1;y<=4;y++)for(let x=1;x<=4;x++){const px=Math.floor((c+x/5)*size/8),py=Math.floor((r+y/5)*size/8),i=(py*size+px)*4;a[n++]=(p[i]+p[i+1]+p[i+2])/3;}return a;}
 function labDifference(a,b){if(!a||!b)return Infinity;let mean=0;for(let i=0;i<a.length;i++)mean+=a[i]-b[i];mean/=a.length;let sum=0;for(let i=0;i<a.length;i++)sum+=Math.abs(a[i]-b[i]-mean);return sum/a.length;}
-function labObs(p){const threshold=Math.max(.1,Math.min(2,Number($('labThreshold').value)||.5));const {grid,scores}=Logic.classicalGrid(p,640,threshold);return {grid,scores,occ:Logic.gridToOcc(grid,'bottom')};}
-function labRenderObs(obs){const dst=$('labGrid'),expected=Logic.occFromChess(game);dst.replaceChildren();for(let r=0;r<8;r++)for(let c=0;c<8;c++){const q=r*8+c,i=Logic.cellToSq(r,c,'bottom'),el=document.createElement('div');el.textContent=Logic.sqName(i);el.title='Occupancy score '+obs.scores[q].toFixed(2);el.style.cssText='padding:5px 0;text-align:center;font-size:10px;border-radius:3px;background:'+(obs.grid[q]?'#247e63':'#273345')+';border:1px solid '+(obs.occ[i]!==expected[i]?'#ff777e':'transparent');dst.append(el);}}
-function labAcceptPhoto(photo,fp){labVerify=null;labReference={photo,fp};labLastObservation=null;labObservationSince=0;labFen=game.fen();labLastFrame=fp;labStableAt=0;labMotion=false;labPending=null;$('labCandidates').replaceChildren();labDraw('labPrevious',photo);}
+/* Piece colour is learned from the last confirmed photo and its known position.
+   Occupancy and the board setup remain independent; colour never blocks setup.
+   States: 0=empty, w=White, b=Black, ?=occupied but colour uncertain. */
+function labColorPosition(chess){const a=Array(64).fill('0'),b=chess.board();for(let r=0;r<8;r++)for(let c=0;c<8;c++)if(b[r][c])a[Logic.cellToSq(r,c,'bottom')]=b[r][c].color;return a;}
+function labColorQuantile(v,q=.5){const a=v.slice().sort((x,y)=>x-y);return a[Math.floor((a.length-1)*q)]??0;}
+function labColorParity(i){return ((i&7)+(7-(i>>3)))&1;}
+function labColorLuma(rgb){return .299*rgb[0]+.587*rgb[1]+.114*rgb[2];}
+function labColorPatches(photo){
+ const patches=Array.from({length:64},()=>[]);
+ for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+  const patch=patches[Logic.cellToSq(r,c,'bottom')];
+  // Central 60% of the cell, excluding adjacent square borders.
+  for(let y=18;y<=62;y+=4)for(let x=18;x<=62;x+=4){const k=((r*80+y)*640+c*80+x)*4;patch.push([photo[k],photo[k+1],photo[k+2]]);}
+ }
+ return patches;
+}
+function labColorFeature(patch,background,offset=[0,0,0]){
+ const center=[],all=[],fg=[],chroma=[];
+ for(let k=0;k<patch.length;k++){
+  const rgb=patch[k].map((v,j)=>Math.max(0,Math.min(255,v-offset[j]))),l=labColorLuma(rgb);all.push(l);
+  const x=k%12,y=Math.floor(k/12);if(x>=3&&x<=8&&y>=3&&y<=8)center.push(l);
+  if(Math.hypot(...rgb.map((v,j)=>v-background[j]))>30){fg.push(l);chroma.push(rgb[0]-rgb[2]);}
+ }
+ // Central and foreground statistics work on both light and dark squares.
+ const f=fg.length>=8?fg:center;
+ return [labColorQuantile(f),labColorQuantile(center),labColorQuantile(all,.20),labColorQuantile(all,.80),labColorQuantile(chroma.length>=8?chroma:patch.map(rgb=>rgb[0]-rgb[2]-offset[0]+offset[2]))];
+}
+function labColorLearn(photo,chess){
+ const states=labColorPosition(chess),patches=labColorPatches(photo),background=[0,1].map(parity=>{
+  const pixels=patches.flatMap((p,i)=>states[i]==='0'&&labColorParity(i)===parity?p:[]);
+  return pixels.length?[0,1,2].map(c=>labColorQuantile(pixels.map(v=>v[c]))):null;
+ });
+ if(background.some(x=>!x))return null;
+ const samples=states.flatMap((color,i)=>color==='0'?[]:[{color,parity:labColorParity(i),f:labColorFeature(patches[i],background[labColorParity(i)])}]);
+ if(!samples.some(s=>s.color==='w')||!samples.some(s=>s.color==='b'))return null;
+ return {states,patches,background,samples};
+}
+function labColorClassify(feature,parity,model){
+ if(!model)return {color:'?',margin:0};
+ const distance=(a,b)=>.40*Math.abs(a[0]-b[0])+.29*Math.abs(a[1]-b[1])+.12*Math.abs(a[2]-b[2])+.12*Math.abs(a[3]-b[3])+.07*Math.abs(a[4]-b[4]);
+ const nearest=color=>{
+  const same=model.samples.filter(s=>s.color===color&&s.parity===parity),pool=same.length>=2?same:model.samples.filter(s=>s.color===color);
+  const ds=pool.map(s=>distance(feature,s.f)+(s.parity===parity?0:8)).sort((a,b)=>a-b);
+  return ds.length?ds[0]*.8+(ds[1]??ds[0])*.2:Infinity;
+ };
+ const w=nearest('w'),b=nearest('b'),margin=(b-w)/(w+b+12);
+ return {color:Math.min(w,b)<=48&&Math.abs(margin)>=.22?(margin>0?'w':'b'):'?',margin:Number.isFinite(margin)?margin:0};
+}
+function labColorRead(photo,occ,model){
+ const result={states:Array.from(occ,x=>x?'?':'0'),margin:new Float32Array(64),change:new Float32Array(64)};
+ if(!model)return result;
+ const patches=labColorPatches(photo),stableEmpty=[];
+ for(let i=0;i<64;i++)if(!occ[i]&&model.states[i]==='0')stableEmpty.push(i);
+ if(stableEmpty.length<4)return result;
+ const offset=[0,1,2].map(c=>labColorQuantile(stableEmpty.map(i=>labColorQuantile(patches[i].map(v=>v[c]))-labColorQuantile(model.patches[i].map(v=>v[c])))));
+ // Large lighting shifts are not reliable evidence for a capture.
+ if(offset.some(x=>Math.abs(x)>45))return result;
+ for(let i=0;i<64;i++)if(occ[i]){
+  const f=labColorFeature(patches[i],model.background[labColorParity(i)],offset),c=labColorClassify(f,labColorParity(i),model);
+  result.states[i]=c.color;result.margin[i]=c.margin;
+  result.change[i]=patches[i].reduce((sum,p,k)=>sum+Math.abs(labColorLuma(p)-labColorLuma(offset)-labColorLuma(model.patches[i][k])),0)/patches[i].length;
+ }
+ return result;
+}
+function labColorCapture(ties,colors,chess,model){
+ // Only break exact binary ties between ordinary captures from the same origin.
+ // Promotion, castling, en passant and noisy occupancy keep the previous logic.
+ if(!model||ties.length<2||ties.some(x=>x.d!==0||!x.m.captured||x.m.promotion||x.m.flags.includes('e')||x.m.from!==ties[0].m.from))return null;
+ const mover=chess.turn(),enemy=mover==='w'?'b':'w';
+ const candidates=ties.map(x=>{const i=Logic.sqIndex(x.m.to);return {x,i,state:colors.states[i],change:colors.change[i]};});
+ const winners=candidates.filter(c=>{
+  const old=labColorClassify(labColorFeature(model.patches[c.i],model.background[labColorParity(c.i)]),labColorParity(c.i),model);
+  return model.states[c.i]===enemy&&old.color===enemy&&c.state===mover&&Math.abs(colors.margin[c.i])>=.30&&c.change>=12;
+ });
+ if(winners.length!==1)return null;
+ const win=winners[0];
+ // Other destinations must still look like the opponent, or be nearly unchanged.
+ if(candidates.some(c=>c!==win&&(c.state===mover||(c.state==='?'&&c.change>=8))))return null;
+ return win.x.m;
+}
+function labObs(p){const threshold=Math.max(.1,Math.min(2,Number($('labThreshold').value)||.5));const {grid,scores}=Logic.classicalGrid(p,640,threshold),occ=Logic.gridToOcc(grid,'bottom');return {grid,scores,occ,colors:labColorRead(p,occ,labFen===game?.fen()?labReference?.colorModel:null)};}
+function labRenderObs(obs){const dst=$('labGrid'),expected=Logic.occFromChess(game);dst.replaceChildren();for(let r=0;r<8;r++)for(let c=0;c<8;c++){const q=r*8+c,i=Logic.cellToSq(r,c,'bottom'),el=document.createElement('div'),color=obs.colors.states[i],name=color==='w'?'White':color==='b'?'Black':color==='?'?'Color uncertain':'Empty';el.textContent=Logic.sqName(i)+(color==='0'?'':' '+(color==='?'?'?':color.toUpperCase()));el.title=name+' · occupancy score '+obs.scores[q].toFixed(2);el.style.cssText='padding:5px 0;text-align:center;font-size:10px;border-radius:3px;background:'+(color==='w'?'#e9e8da':color==='b'?'#10141c':color==='?'?'#247e63':'#273345')+';color:'+(color==='w'?'#111822':'#fff')+';border:1px solid '+(obs.occ[i]!==expected[i]?'#ff777e':'transparent');dst.append(el);}}
+function labAcceptPhoto(photo,fp){labVerify=null;labReference={photo,fp,colorModel:labColorLearn(photo,game)};labLastObservation=null;labObservationSince=0;labFen=game.fen();labLastFrame=fp;labStableAt=0;labMotion=false;labPending=null;$('labCandidates').replaceChildren();labDraw('labPrevious',photo);}
 function labCommit(m,photo,fp){const old=game.fen(),played=game.move({from:m.from,to:m.to,promotion:m.promotion||'q'});if(!played){labUI('Move no longer legal. Recheck the board.');return;}physicalMoveLog.push({label:played.san,fen:game.fen(),previousFen:old,illegal:false});showMoves();drawPos(null);const previous=labReference?.photo;labAcceptPhoto(photo,fp);if(previous)labDraw('labPrevious',previous);labRenderObs(labObs(photo));labUI('Recorded '+played.san+' · waiting for next move.');msg('Photo move: '+played.san);sayMove(played);if(game.game_over())labUI('Game finished. Export PGN.');}
 function labAnalyze(forceBaseline=false,manual=false){
  if(mode!=='rec'||!game||!stream){labUI('Finish board calibration and starting-position verification first.');return;}
@@ -1405,13 +1485,21 @@ function labAnalyze(forceBaseline=false,manual=false){
  if(forceBaseline||!labReference||labFen!==game.fen()){
   if(none!==0&&!forceBaseline){st(3,none+' mismatches','bad');st(4,'waiting');labUI('Reference photo disagrees on '+none+' squares. Check orientation and position, adjust threshold or confirm the physical position manually.');return;}
   if(forceBaseline&&none!==0&&!confirm('The occupancy test disagrees on '+none+' squares. Is the physical position definitely correct?'))return;
-  labAcceptPhoto(p,fp);st(3,none===0?'position verified ✓':'confirmed by user','ok');st(4,'recording – play!','ok');prog(1);$('modelStatus').textContent='Photo occupancy: ready';msg('READY – play one move at a time.');readySnd();spk('Board ready. Start playing.');labUI('Reference photo captured. Play one move, then remove your hands.');return;
+  labAcceptPhoto(p,fp);obs.colors=labColorRead(p,obs.occ,labReference.colorModel);labRenderObs(obs);st(3,none===0?'position verified ✓':'confirmed by user','ok');st(4,'recording – play!','ok');prog(1);$('modelStatus').textContent='Photo occupancy: ready';msg('READY – play one move at a time.');readySnd();spk('Board ready. Start playing.');labUI('Reference photo captured. Play one move, then remove your hands.');return;
  }
  if(game.game_over())return;
  const ranked=Logic.rankMoves(game,obs.occ);if(!ranked.length)return;
  if(none===0){labVerify=null;labPending=null;$('labCandidates').replaceChildren();labUI('No occupancy change detected. Waiting for a move.');return;}
  const best=ranked[0],ties=ranked.filter(x=>x.d===best.d);
- if(best.d===0&&ties.length===1&&!best.m.promotion){labCommit(best.m,p,fp);return;}labVerify=null;
+ if(best.d===0&&ties.length===1&&!best.m.promotion){labCommit(best.m,p,fp);return;}
+ const colorMove=labColorCapture(ties,obs.colors,game,labReference.colorModel);
+ if(colorMove){
+  const key=colorMove.from+colorMove.to;
+  if(manual||(labVerify?.colorKey===key&&now-labVerify.since>=300)){labCommit(colorMove,p,fp);labUI('Recorded '+colorMove.san+' · capture resolved by piece color.');return;}
+  if(labVerify?.colorKey!==key)labVerify={colorKey:key,since:now};
+  labPending=null;$('labCandidates').replaceChildren();labUI('Checking capture color change: '+colorMove.san+'…');return;
+ }
+ labVerify=null;
  if(best.d>=none&&!manual){labPending=null;$('labCandidates').replaceChildren();labUI('Unclear photo; automatically checking again.');return;}
  if(!manual&&best.d>0&&now-labObservationSince<1600){labUI('Some squares disagree · automatically checking again.');return;}
  if(!manual&&labPending?.fen===game.fen()&&labPending.observation===observation)return;
@@ -1419,7 +1507,7 @@ function labAnalyze(forceBaseline=false,manual=false){
  const options=ranked.filter(x=>x.d===best.d).slice(0,12);
  for(const x of options){const moves=x.m.promotion?game.moves({verbose:true}).filter(m=>m.from===x.m.from&&m.to===x.m.to):[x.m];for(const m of moves){const b=document.createElement('button');b.textContent=m.san+' ('+x.d+' mismatch)';b.onclick=()=>{if(labPending&&labPending.fen===game.fen())labCommit(m,p,fp)};dst.append(b);}}
  const retry=document.createElement('button');retry.textContent='Rescan / reject';retry.onclick=()=>{labPending=null;dst.replaceChildren();labLastObservation=null;labObservationSince=0;labUI('Rescanning automatically.');};dst.append(retry);
- labUI('Ambiguous or noisy occupancy ('+best.d+' mismatches). Confirm the actual move, or rescan.');
+ labUI('Ambiguous occupancy or piece color ('+best.d+' mismatches). Confirm the actual move, or rescan.');
 }
 function labStep(){
  if(mode!==labMode){labMode=mode;labReset();}
