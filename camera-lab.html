@@ -1394,58 +1394,6 @@ function labObs(p){const threshold=Math.max(.1,Math.min(2,Number($('labThreshold
 function labRenderObs(obs){const dst=$('labGrid'),expected=Logic.occFromChess(game);dst.replaceChildren();for(let r=0;r<8;r++)for(let c=0;c<8;c++){const q=r*8+c,i=Logic.cellToSq(r,c,'bottom'),el=document.createElement('div');el.textContent=Logic.sqName(i);el.title='Occupancy score '+obs.scores[q].toFixed(2);el.style.cssText='padding:5px 0;text-align:center;font-size:10px;border-radius:3px;background:'+(obs.grid[q]?'#247e63':'#273345')+';border:1px solid '+(obs.occ[i]!==expected[i]?'#ff777e':'transparent');dst.append(el);}}
 function labAcceptPhoto(photo,fp){labVerify=null;labReference={photo,fp};labLastObservation=null;labObservationSince=0;labFen=game.fen();labLastFrame=fp;labStableAt=0;labMotion=false;labPending=null;$('labCandidates').replaceChildren();labDraw('labPrevious',photo);}
 function labCommit(m,photo,fp){const old=game.fen(),played=game.move({from:m.from,to:m.to,promotion:m.promotion||'q'});if(!played){labUI('Move no longer legal. Recheck the board.');return;}physicalMoveLog.push({label:played.san,fen:game.fen(),previousFen:old,illegal:false});showMoves();drawPos(null);const previous=labReference?.photo;labAcceptPhoto(photo,fp);if(previous)labDraw('labPrevious',previous);labRenderObs(labObs(photo));labUI('Recorded '+played.san+' · waiting for next move.');msg('Photo move: '+played.san);sayMove(played);if(game.game_over())labUI('Game finished. Export PGN.');}
-/* Two-photo occupancy comparison (browser port of the Python/Pillow test).
-   Used only for simple moves AFTER the original setup is complete. */
-const labTwoPhotoCache=new WeakMap();
-function labTwoPhotoOccupancy(pixels,threshold){
- const cached=labTwoPhotoCache.get(pixels);
- if(cached&&cached.threshold===threshold)return cached.occ;
- const size=640,cell=80,margin=14;
- const hist=Array.from({length:2},()=>Array.from({length:3},()=>new Uint32Array(256)));
- const count=[0,0];
- // Original Python method estimates the two square colours from all 64 squares.
- for(let r=0;r<8;r++)for(let c=0;c<8;c++){
-  const parity=(r+c)&1,x0=c*cell+margin,y0=r*cell+margin,x1=(c+1)*cell-margin,y1=(r+1)*cell-margin;
-  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
-   const i=(y*size+x)*4;for(let k=0;k<3;k++)hist[parity][k][pixels[i+k]]++;count[parity]++;
-  }
- }
- const med=(h,n)=>{const lo=Math.floor((n-1)/2),hi=Math.floor(n/2);let sum=0,a=-1;for(let i=0;i<256;i++){sum+=h[i];if(a<0&&sum>lo)a=i;if(sum>hi)return(a+i)/2;}return 128;};
- const refs=hist.map((hs,p)=>hs.map(h=>med(h,count[p])));
- const grid=new Uint8Array(64),w=cell-2*margin,h=w,area=w*h;
- for(let r=0;r<8;r++)for(let c=0;c<8;c++){
-  const R=refs[(r+c)&1],x0=c*cell+margin,y0=r*cell+margin;
-  const g=new Float32Array(area);let far=0,ex=0,ey=0;
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-   const i=((y0+y)*size+x0+x)*4,dr=pixels[i]-R[0],dg=pixels[i+1]-R[1],db=pixels[i+2]-R[2];
-   if(dr*dr+dg*dg+db*db>2025)far++;
-   g[y*w+x]=(pixels[i]+pixels[i+1]+pixels[i+2])/3;
-  }
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*w+x;if(x+1<w)ex+=Math.abs(g[i+1]-g[i]);if(y+1<h)ey+=Math.abs(g[i+w]-g[i]);}
-  grid[r*8+c]=far/area+.04*(ex/(h*(w-1))+ey/((h-1)*w))>threshold?1:0;
- }
- const occ=Logic.gridToOcc(grid,'bottom');labTwoPhotoCache.set(pixels,{threshold,occ});return occ;
-}
-function labTwoPhotoDelta(before,after){
- const removed=[],added=[];for(let i=0;i<64;i++){if(before[i]&&!after[i])removed.push(Logic.sqName(i));else if(!before[i]&&after[i])added.push(Logic.sqName(i));}
- return {removed,added};
-}
-function labTwoPhotoSimpleMove(previous,current,expected,originalObservation){
- // A regular non-capture must change exactly two occupancy squares.
- // Skip complex cases altogether, preserving the original detector.
- if(!previous||Logic.dist(expected,originalObservation)!==2)return null;
- const threshold=Math.max(.1,Math.min(2,Number($('labThreshold').value)||.5));
- const before=labTwoPhotoOccupancy(previous,threshold),after=labTwoPhotoOccupancy(current,threshold);
- const d=labTwoPhotoDelta(before,after);
- if(d.removed.length!==1||d.added.length!==1||Logic.dist(before,expected)!==0)return null;
- const from=d.removed[0],to=d.added[0];
- const candidates=game.moves({verbose:true,square:from}).filter(m=>m.from===from&&m.to===to&&!m.captured&&!m.promotion&&!/[kqe]/.test(m.flags));
- if(candidates.length!==1)return null;
- const m=candidates[0],predicted=Logic.predicted(expected,m);
- // Both independent occupancy readings must agree with the legal move.
- if(Logic.dist(predicted,after)!==0||Logic.dist(predicted,originalObservation)!==0)return null;
- return m;
-}
 function labAnalyze(forceBaseline=false,manual=false){
  if(mode!=='rec'||!game||!stream){labUI('Finish board calibration and starting-position verification first.');return;}
  const p=labPhoto(640,true);if(!p){labUI('Cannot refine photo; check all four locked corners.');return;}
@@ -1460,10 +1408,6 @@ function labAnalyze(forceBaseline=false,manual=false){
   labAcceptPhoto(p,fp);st(3,none===0?'position verified ✓':'confirmed by user','ok');st(4,'recording – play!','ok');prog(1);$('modelStatus').textContent='Photo occupancy: ready';msg('READY – play one move at a time.');readySnd();spk('Board ready. Start playing.');labUI('Reference photo captured. Play one move, then remove your hands.');return;
  }
  if(game.game_over())return;
- // Optional fast path, safely isolated from setup and from complex-move logic.
- let simpleMove=null;
- try{simpleMove=labTwoPhotoSimpleMove(labReference.photo,p,cur,obs.occ);}catch(e){console.warn('Two-photo comparison fallback:',e);}
- if(simpleMove){labCommit(simpleMove,p,fp);return;}
  const ranked=Logic.rankMoves(game,obs.occ);if(!ranked.length)return;
  if(none===0){labVerify=null;labPending=null;$('labCandidates').replaceChildren();labUI('No occupancy change detected. Waiting for a move.');return;}
  const best=ranked[0],ties=ranked.filter(x=>x.d===best.d);
