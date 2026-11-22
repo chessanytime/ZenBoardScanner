@@ -25,6 +25,8 @@ details.panel{padding:0}details>summary{padding:15px 16px;cursor:pointer;list-st
 <nav class="lab-nav"><a href="index.html">← Main scanner</a> <a href="combined-scanner.html">Combined Detection →</a></nav><main class="workspace">
 <div class="stack">
 <section class="panel camera-panel"><div class="panel-top"><h2>Board camera</h2><span class="tag">LIVE VIEW</span></div>
+<div class="row" style="margin:0 0 12px;align-items:center"><label for="labPixelTest" style="display:flex;align-items:center;gap:8px;font-weight:700"><input type="checkbox" id="labPixelTest" checked style="min-height:0;width:18px;height:18px;accent-color:var(--ac)"> Pixel Test (captures only)</label><span id="labPixelState" class="tag">ON</span></div>
+<p id="labPixelStatus" class="help" style="margin:0 0 12px">Waiting for a possible capture.</p>
 <div id="stage"><video id="v" playsinline muted autoplay></video><canvas id="ov"></canvas></div>
 <div id="msg" role="status" aria-live="polite">Arrange the 32 pieces, select camera orientation, and start camera with all four board corners visible.</div><div id="barw"><div id="bar"></div></div><small id="modelStatus">Photo occupancy: waiting for board lock</small>
 <div class="row"><label class="field">Board orientation<select id="viewSide" class="camera-select" aria-label="Camera board orientation"><option value="0">Camera: White side</option><option value="1">Camera: right side</option><option value="2">Camera: Black side</option><option value="3">Camera: left side</option></select></label></div><div class="mode-picker"><div class="mode-title">Move detection mode</div><div class="mode-options" role="radiogroup" aria-label="Move detection mode"><label><input type="radio" name="labModeChoice" value="auto" id="labAuto" checked><span><strong>Automatic</strong><small>Play on the board; moves detected automatically</small></span></label><label><input type="radio" name="labModeChoice" value="manual" id="labManual"><span><strong>Manual capture</strong><small>Tap the button after each move</small></span></label></div><p class="help" id="labModeHelp">Automatic mode: the scanner captures stable board photos and records legal moves.</p></div><div class="primary-actions"><button class="p" id="b1">Start camera</button><button id="b2">Auto-detect board</button><button id="b3">Lock border</button></div></section>
@@ -1485,6 +1487,79 @@ function labColorRead(photo,occ,model){
  }
  return result;
 }
+/* Optional find.html pixel tracker. The input is the already flattened,
+   correctly oriented 640x640 reference/current photo. Only legal ordinary
+   capture destinations are tested; no change to normal-move recognition. */
+function labPixelFeatures(photo,square,colour){
+ const N=48,cell=80,idx=Logic.sqIndex(square),sx=(idx&7)*cell,sy=(7-(idx>>3))*cell;
+ const p=new Uint8ClampedArray(N*N*3);
+ // Bilinear resampling of one square, like the original find.html canvas.
+ for(let y=0;y<N;y++)for(let x=0;x<N;x++){
+  const xx=(x+.5)*cell/N-.5,yy=(y+.5)*cell/N-.5;
+  const ix=Math.floor(xx),iy=Math.floor(yy),fx=xx-ix,fy=yy-iy;
+  const a=((sy+iy)*640+sx+ix)*4,b=a+4,c=a+640*4,d=c+4,k=(y*N+x)*3;
+  for(let ch=0;ch<3;ch++)p[k+ch]=(photo[a+ch]*(1-fx)+photo[b+ch]*fx)*(1-fy)+(photo[c+ch]*(1-fx)+photo[d+ch]*fx)*fy;
+ }
+ const rgb=(x,y)=>{const k=(y*N+x)*3;return [p[k],p[k+1],p[k+2]];};
+ const dist=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2]);
+ const corners=[[3,3],[N-4,3],[3,N-4],[N-4,N-4]].map(([x,y])=>rgb(x,y));
+ const bg=corners.slice().sort((a,b)=>corners.reduce((s,c)=>s+dist(a,c)-dist(b,c),0))[0];
+ let whiteCount=0,blackCount=0,mass=0;const vector=[];
+ for(let y=5;y<N-5;y++)for(let x=5;x<N-5;x++){
+  const v=rgb(x,y),[r,g,b]=v,l=.299*r+.587*g+.114*b,sat=Math.max(r,g,b)-Math.min(r,g,b);
+  const green=(g>r+4&&g>b+4)||(g>=r&&g>=b&&2*g-r-b>12);
+  let value=0;
+  if(!green&&dist(v,bg)>30){
+   const white=l>=150&&sat<85,black=l<=100&&sat<70;
+   if(white)whiteCount++;if(black)blackCount++;
+   if(colour==='w'&&white)value=l/255;
+   if(colour==='b'&&black)value=1-l/255;
+  }
+  vector.push(value);mass+=value;
+ }
+ const minimum=vector.length*.025;
+ const detectedColour=whiteCount>blackCount*1.5&&whiteCount>minimum?'w':blackCount>whiteCount*1.5&&blackCount>minimum?'b':'?';
+ return {vector,mass:mass/vector.length,whiteCount,blackCount,detectedColour};
+}
+function labPixelSimilarity(a,b){
+ let dot=0,aa=0,bb=0,diff=0;
+ for(let i=0;i<a.vector.length;i++){const x=a.vector[i],y=b.vector[i];dot+=x*y;aa+=x*x;bb+=y*y;diff+=Math.abs(x-y);}
+ return 100*(.7*(aa&&bb?dot/Math.sqrt(aa*bb):0)+.2*Math.min(a.mass,b.mass)/Math.max(a.mass,b.mass,.001)+.1*(1-diff/a.vector.length));
+}
+function labPixelChange(a,b){
+ let diff=0,union=0;
+ for(let i=0;i<a.vector.length;i++){diff+=Math.abs(a.vector[i]-b.vector[i]);union+=Math.max(a.vector[i],b.vector[i]);}
+ return {percent:union?100*diff/union:0,average:diff/a.vector.length};
+}
+function labPixelCaptureCandidates(cur,obs,ranked){
+ const vacant=[],added=[];
+ for(let i=0;i<64;i++){if(cur[i]&&!obs[i])vacant.push(i);else if(!cur[i]&&obs[i])added.push(i);}
+ if(vacant.length!==1||added.length!==0)return [];
+ const from=Logic.sqName(vacant[0]);
+ return ranked.filter(x=>x.d===0&&x.m.from===from&&x.m.captured&&!x.m.promotion&&!x.m.flags.includes('e'));
+}
+function labPixelCapture(candidates,before,after,mover){
+ const matches=[],details=[];
+ if(!before||!after||!candidates.length)return {move:null,details,reason:'No reference photo or legal capture.'};
+ const source=candidates[0].m.from,ref=labPixelFeatures(before,source,mover);
+ if(ref.detectedColour!==mover||ref.mass<.02)return {move:null,details,reason:'Starting piece colour not confirmed.'};
+ for(const x of candidates){
+  const dest=x.m.to,old=labPixelFeatures(before,dest,mover),now=labPixelFeatures(after,dest,mover);
+  const change=labPixelChange(old,now),score=labPixelSimilarity(ref,now);
+  const opposite=mover==='w'?now.blackCount:now.whiteCount;
+  const accepted=now.detectedColour===mover&&now.mass>=.02&&change.percent>=15&&change.average>=.004;
+  details.push(dest+': W '+now.whiteCount+' / B '+now.blackCount+' / '+score.toFixed(0)+'%'+(accepted?'':' (rejected)'));
+  if(accepted)matches.push({m:x.m,score,opposite});
+ }
+ matches.sort((a,b)=>a.opposite-b.opposite||b.score-a.score);
+ if(!matches.length)return {move:null,details,reason:'No changed matching-colour destination.'};
+ const best=matches[0],next=matches[1];
+ // For automatic recording, require a clear lead rather than a one-pixel
+ // advantage. A strong opposite-colour gap can resolve a tall-piece example.
+ const clear=next?(next.opposite-best.opposite>=10||(next.opposite===best.opposite&&best.score-next.score>=5&&best.score>=60)):(candidates.length===1||best.score>=60);
+ return {move:clear?best.m:null,details,reason:clear?'Preferred '+best.m.to+' (fewest '+(mover==='w'?'black':'white')+' pixels).':'Pixel result uncertain; using existing capture checks.'};
+}
+function labPixelStatus(text){$('labPixelStatus').textContent=text;}
 function labColorCapture(ties,colors,chess,model){
  // Only break exact binary ties between ordinary captures from the same origin.
  // Promotion, castling, en passant and noisy occupancy keep the previous logic.
@@ -1610,6 +1685,22 @@ function labAnalyze(forceBaseline=false,manual=false){
  const ranked=Logic.rankMoves(game,obs.occ);if(!ranked.length)return;
  if(none===0){labVerify=null;labPending=null;$('labCandidates').replaceChildren();labUI('No occupancy change detected. Waiting for a move.');return;}
  const best=ranked[0],ties=ranked.filter(x=>x.d===best.d);
+ // Run the optional pixel tracker before either the single-legal-move or
+ // multiple-capture branches, and only for the exact ordinary-capture pattern.
+ const pixelOn=$('labPixelTest').checked;
+ const pixelCandidates=pixelOn?labPixelCaptureCandidates(cur,obs.occ,ranked):[];
+ if(pixelCandidates.length){
+  const pixel=labPixelCapture(pixelCandidates,labReference.photo,p,game.turn());
+  labPixelStatus('Pixel Test: '+pixel.reason+(pixel.details.length?' | '+pixel.details.join(' · '):''));
+  if(pixel.move&&labBaseSupportsMove(pixel.move,obs,cur,labReference)){
+   const key='pixel:'+pixel.move.from+pixel.move.to;
+   if(manual||(labVerify?.colorKey===key&&now-labVerify.since>=300)){
+    labCommit(pixel.move,p,fp);labUI('Recorded '+pixel.move.san+' · capture resolved by Pixel Test.');return;
+   }
+   if(labVerify?.colorKey!==key)labVerify={colorKey:key,since:now};
+   labPending=null;$('labCandidates').replaceChildren();labUI('Verifying Pixel Test capture: '+pixel.move.san+'…');return;
+  }
+ }else if(pixelOn)labPixelStatus('Pixel Test: waiting for an ordinary capture (one vacant, none newly occupied).');
  if(best.d===0&&ties.length===1&&!best.m.promotion&&labBaseSupportsMove(best.m,obs,cur,labReference)){
   if(!obs.suppressed.length||manual){labCommit(best.m,p,fp);return;}
   const key='base:'+best.m.from+best.m.to;
@@ -1653,6 +1744,12 @@ function labModeChanged(){
  if(mode==='rec'&&!labReference)msg(auto?'Waiting for automatic starting-position photo.':'Board locked. Tap Capture & Analyze now to capture the starting position.');
 }
 $('labAuto').onchange=labModeChanged;$('labManual').onchange=labModeChanged;
+$('labPixelTest').onchange=()=>{
+ const on=$('labPixelTest').checked;
+ $('labPixelState').textContent=on?'ON':'OFF';
+ labVerify=null;labPending=null;$('labCandidates').replaceChildren();
+ labPixelStatus(on?'Pixel Test enabled · waiting for a possible capture.':'Pixel Test disabled · original capture detection active.');
+};
 $('labCapture').onclick=()=>{labPending=null;labAnalyze(false,true)};
 $('labBaseline').onclick=()=>labAnalyze(true,true);
 $('labDownload').onclick=()=>{if(!labLastPhoto){labUI('Capture a photo first.');return;}const a=document.createElement('a');a.href=$('labCurrent').toDataURL('image/jpeg',.92);a.download='zen-board-photo.jpg';a.click()};
@@ -1663,3 +1760,4 @@ const loop=()=>{if(mode!=='rec'&&labMode==='rec'){labMode=mode;labReset();}const
 setTimeout(loop,Math.max(20,(mode=='rec'?65:250)-(Date.now()-t)))};loop();
 requestAnimationFrame(draw);
 </script></body></html>
+
