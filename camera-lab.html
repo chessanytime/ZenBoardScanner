@@ -150,6 +150,58 @@ header{margin:0 0 12px;padding:0 2px}
  .record-panel #labGrid{width:min(100%,480px)}
  .record-panel #labGrid>div{font-size:clamp(8px,2.25vw,11px)!important}
 }
+
+/* Four immediately visible views: camera | reference | latest | occupancy.
+   Only layout changes; the existing 640px canvases retain their identity. */
+.record-panel .monitor-triptych{
+ display:grid;
+ grid-template-columns:repeat(3,minmax(0,1fr));
+ gap:9px;
+ align-items:start;
+ margin:4px 0 12px;
+}
+.record-panel .monitor-triptych figure{min-width:0;margin:0}
+.record-panel .monitor-triptych figcaption{
+ min-height:28px;line-height:1.25;font-weight:700;font-size:11px;
+ margin:0 0 6px;color:#b9c9d6
+}
+.record-panel .monitor-triptych canvas.sq{
+ width:100%;max-width:100%;aspect-ratio:1;display:block;height:auto;
+ border:1px solid #314254;border-radius:8px
+}
+.record-panel .monitor-triptych #labGrid{
+ display:grid!important;
+ grid-template-columns:repeat(8,minmax(0,1fr))!important;
+ width:100%;max-width:100%;margin:0!important;
+ gap:1px!important;aspect-ratio:1/1;
+ min-height:0;border:1px solid #314254;border-radius:7px;
+ overflow:hidden;background:#0d1c2a
+}
+.record-panel .monitor-triptych #labGrid:empty{
+ background:conic-gradient(#233843 25%,#102631 0 50%,#233843 0 75%,#102631 0)
+ 0 0 /25% 25%;
+}
+.record-panel .monitor-triptych #labGrid>div{
+ aspect-ratio:1 / 1;
+ min-height:0!important;min-width:0;
+ width:100%;height:100%;padding:0!important;
+ font-size:clamp(7px,.59vw,10px)!important;
+ line-height:1.05;letter-spacing:-.35px;
+ border-radius:2px!important
+}
+@media(min-width:1221px){
+ .workspace{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+ .record-panel{order:-1}
+}
+@media(max-width:1220px) and (min-width:761px){
+ .record-panel .monitor-triptych{grid-template-columns:repeat(3,minmax(0,1fr))}
+ .record-panel .monitor-triptych #labGrid>div{font-size:clamp(8px,1vw,11px)!important}
+}
+@media(max-width:760px){
+ .record-panel .monitor-triptych{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .record-panel .monitor-triptych figure:last-child{grid-column:1/-1;width:min(100%,320px);margin-inline:auto}
+ .record-panel .monitor-triptych #labGrid>div{font-size:clamp(9px,2.3vw,12px)!important}
+}
 </style></head><body>
 <header><div class="brandmark" aria-hidden="true">♞</div><div><div class="eyebrow">Zen Mind Chess Academy</div><h1>Camera Lab</h1><div class="subtitle">Experimental move detection · independent test page</div></div><span class="local">TEST LAB</span></header>
 <nav class="lab-nav"><a href="index.html">← Main scanner</a> <a href="combined-scanner.html">Combined Detection →</a></nav><main class="workspace">
@@ -209,11 +261,16 @@ header{margin:0 0 12px;padding:0 2px}
  </details>
 </section>
 <section class="panel record-panel"><div class="panel-top"><h2>Photo occupancy detection</h2><span class="tag">NO ONNX</span></div>
+<div class="cv monitor-triptych" aria-label="Live photo and occupancy comparison">
+ <figure><figcaption>Previous confirmed photo</figcaption><canvas id="labPrevious" class="sq" width="640" height="640"></canvas></figure>
+ <figure><figcaption>Latest refined photo</figcaption><canvas id="labCurrent" class="sq" width="640" height="640"></canvas></figure>
+ <figure><figcaption>64-square occupancy</figcaption><div id="labGrid" role="group" aria-label="Detected square occupancy"></div></figure>
+</div>
 <div class="row"><label class="field">Occupancy threshold <input id="labThreshold" type="number" min="0.1" max="2" step="0.05" value="0.5"></label><label class="field">Stable delay (ms) <input id="labDelay" type="number" min="300" max="2000" step="100" value="500"></label></div>
 <div class="actions"><button id="labCapture" class="p">Capture &amp; Analyze now</button><button id="labBaseline">Confirm starting / current photo</button></div>
-<p id="labStatus" role="status" class="help">Start with all 32 pieces already in their standard positions. The first verified photo becomes the reference.</p><div class="cv"><figure><figcaption>Previous confirmed photo</figcaption><canvas id="labPrevious" class="sq" width="640" height="640"></canvas></figure><figure><figcaption>Latest refined photo</figcaption><canvas id="labCurrent" class="sq" width="640" height="640"></canvas></figure></div>
+<p id="labStatus" role="status" class="help">Start with all 32 pieces already in their standard positions. The first verified photo becomes the reference.</p>
 <div class="row"><button id="labDownload">Download latest photo</button><button id="labDownloadAll" type="button">Save All Move Photos (ZIP)</button></div>
-<p id="labPhotoArchiveStatus" class="help" role="status" style="margin:4px 0 12px">Move photos: photo 0 = initial position; 1, 2, 3… = after each recorded move. JPG, 640×640.</p><div id="labGrid" style="display:grid;grid-template-columns:repeat(8,1fr);gap:2px;margin:12px 0"></div><div id="labCandidates" class="actions"></div><p class="help">W = white piece; B = black piece; ? = occupied, color uncertain; G = height projection filtered using a neighbouring piece's base; gray = empty. Red border = occupancy mismatch. Piece color helps resolve captures. If evidence is uncertain, confirm the actual legal move below.</p><hr style="border:0;border-top:1px solid var(--line);margin:16px 0"><div class="panel-top"><h2>Recorded game</h2><span class="tag">PGN</span></div><div class="move-label">Last move</div><div id="last">—</div><div id="moves">Recorded moves will appear here</div><div class="actions"><input id="manualMove" placeholder="Enter move: e4, Nf3, e2e4" aria-label="Manual chess move"><button id="addManualMove">Add move</button><button id="deleteLastMove">Undo move</button><button id="b5">Resync board</button><button id="recoverBtn">Recover missed move</button><button id="redoRecording" class="p">Restart recording</button></div><button id="b12" class="p">Export PGN file</button><textarea id="pgnbox" readonly></textarea><textarea id="illegalFenBox" readonly style="display:none" aria-label="Illegal move FEN positions"></textarea><button id="exportIllegalFen" style="display:none">Export illegal-move FEN</button><p class="help">Enter SAN or coordinate moves. Coordinate notation also supports recording physically played illegal moves.</p></section>
+<p id="labPhotoArchiveStatus" class="help" role="status" style="margin:4px 0 12px">Move photos: photo 0 = initial position; 1, 2, 3… = after each recorded move. JPG, 640×640.</p><div id="labCandidates" class="actions"></div><p class="help">W = white piece; B = black piece; ? = occupied, color uncertain; G = height projection filtered using a neighbouring piece's base; gray = empty. Red border = occupancy mismatch. Piece color helps resolve captures. If evidence is uncertain, confirm the actual legal move below.</p><hr style="border:0;border-top:1px solid var(--line);margin:16px 0"><div class="panel-top"><h2>Recorded game</h2><span class="tag">PGN</span></div><div class="move-label">Last move</div><div id="last">—</div><div id="moves">Recorded moves will appear here</div><div class="actions"><input id="manualMove" placeholder="Enter move: e4, Nf3, e2e4" aria-label="Manual chess move"><button id="addManualMove">Add move</button><button id="deleteLastMove">Undo move</button><button id="b5">Resync board</button><button id="recoverBtn">Recover missed move</button><button id="redoRecording" class="p">Restart recording</button></div><button id="b12" class="p">Export PGN file</button><textarea id="pgnbox" readonly></textarea><textarea id="illegalFenBox" readonly style="display:none" aria-label="Illegal move FEN positions"></textarea><button id="exportIllegalFen" style="display:none">Export illegal-move FEN</button><p class="help">Enter SAN or coordinate moves. Coordinate notation also supports recording physically played illegal moves.</p></section>
 <details class="panel player-panel"><summary>Player details (optional)</summary><div class="detail-body"><div class="row"><label class="field">White player<input id="whiteName" placeholder="Name"></label><label class="field">Black player<input id="blackName" placeholder="Name"></label></div></div></details>
 </div></main>
 <div id="promotionPrompt" role="dialog" aria-modal="true" aria-labelledby="promotionTitle">
