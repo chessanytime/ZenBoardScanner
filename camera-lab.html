@@ -25,19 +25,16 @@ details.panel{padding:0}details>summary{padding:15px 16px;cursor:pointer;list-st
 <nav class="lab-nav"><a href="index.html">← Main scanner</a> <a href="combined-scanner.html">Combined Detection →</a></nav><main class="workspace">
 <div class="stack">
 <section class="panel camera-panel"><div class="panel-top"><h2>Board camera</h2><span class="tag">LIVE VIEW</span></div>
-<div class="row" style="margin:0 0 12px;align-items:center"><label for="labPixelTest" style="display:flex;align-items:center;gap:8px;font-weight:700"><input type="checkbox" id="labPixelTest" checked style="min-height:0;width:18px;height:18px;accent-color:var(--ac)"> Pixel Test (captures only)</label><span id="labPixelState" class="tag">ON</span></div>
-<p id="labPixelStatus" class="help" style="margin:0 0 12px">Waiting for a possible capture.</p>
 <div class="row" style="margin:0 0 10px;align-items:end">
- <label class="field" for="labSimpleMode" style="flex:1 1 200px">Simple-move pixel detector
-  <select id="labSimpleMode" class="camera-select" style="width:100%">
-   <option value="off">1. OFF — original Camera Lab</option>
-   <option value="fallback" selected>2. FALLBACK — when original is uncertain</option>
-   <option value="only">3. PIXEL ONLY — simple moves</option>
+ <label class="field" for="labPixelMode" style="flex:1">Move detection engine
+  <select id="labPixelMode" class="camera-select" style="width:100%">
+   <option value="off">1. Camera Lab only</option>
+   <option value="fallback" selected>2. Camera Lab + Pixel Test (2s fallback)</option>
+   <option value="only">3. Pixel Test only</option>
   </select>
  </label>
- <button id="labSimpleNow" type="button" style="flex:0 1 200px">Detect simple move now</button>
 </div>
-<p id="labSimpleStatus" class="help" role="status" style="margin:0 0 12px">Simple detector: fallback enabled. Requires a confirmed starting/reference photo.</p>
+<p id="labPixelStatus" class="help" role="status" style="margin:0 0 12px">Combined mode: Camera Lab first. If one source square becomes empty and no move is recorded within 2 seconds, Pixel Test checks simple moves and captures.</p>
 <div id="stage"><video id="v" playsinline muted autoplay></video><canvas id="ov"></canvas></div>
 <div id="msg" role="status" aria-live="polite">Arrange the 32 pieces, select camera orientation, and start camera with all four board corners visible.</div><div id="barw"><div id="bar"></div></div><small id="modelStatus">Photo occupancy: waiting for board lock</small>
 <div class="row"><label class="field">Board orientation<select id="viewSide" class="camera-select" aria-label="Camera board orientation"><option value="0">Camera: White side</option><option value="1">Camera: right side</option><option value="2">Camera: Black side</option><option value="3">Camera: left side</option></select></label></div><div class="mode-picker"><div class="mode-title">Move detection mode</div><div class="mode-options" role="radiogroup" aria-label="Move detection mode"><label><input type="radio" name="labModeChoice" value="auto" id="labAuto" checked><span><strong>Automatic</strong><small>Play on the board; moves detected automatically</small></span></label><label><input type="radio" name="labModeChoice" value="manual" id="labManual"><span><strong>Manual capture</strong><small>Tap the button after each move</small></span></label></div><p class="help" id="labModeHelp">Automatic mode: the scanner captures stable board photos and records legal moves.</p></div><div class="primary-actions"><button class="p" id="b1">Start camera</button><button id="b2">Auto-detect board</button><button id="b3">Lock border</button></div>
@@ -1689,7 +1686,7 @@ const Logic = (() => {
 const labSize=640, labRaw=document.createElement('canvas'),labRawCtx=labRaw.getContext('2d',{willReadFrequently:true});
 let labVerify=null,labLastObservation=null,labObservationSince=0,labReference=null,labLastFrame=null,labStableAt=0,labLastCheck=0,labPending=null,labLastPhoto=null,labFen=null,labMode='',labGeometry='',labMotion=false,labUndoRestore=null;
 const labUI=t=>{$('labStatus').textContent=t};
-function labReset(){labLastObservation=null;labObservationSince=0;labVerify=null;labReference=null;labLastFrame=null;labStableAt=0;labPending=null;labFen=null;labMotion=false;labUndoRestore=null;$('labCandidates').replaceChildren();$('labPrevious').getContext('2d').clearRect(0,0,640,640);}
+function labReset(){labPixelWatchReset();labLastObservation=null;labObservationSince=0;labVerify=null;labReference=null;labLastFrame=null;labStableAt=0;labPending=null;labFen=null;labMotion=false;labUndoRestore=null;$('labCandidates').replaceChildren();$('labPrevious').getContext('2d').clearRect(0,0,640,640);}
 function labPhoto(size,full=false){
  if(!quad||!V.videoWidth||!W.width||!stream)return null;
  let src,w,h;
@@ -1949,7 +1946,7 @@ const labSimpleEngine = (() => {
  return {evaluate,capture};
 })();
 let labSimpleState={reference:null,fp:null,since:0,verify:null};
-function labSimpleStatus(text){$('labSimpleStatus').textContent=text;}
+function labSimpleStatus(text){labPixelStatus(text);}
 function labSimpleStable(fp,now,manual){
  if(labSimpleState.reference!==labReference){
   labSimpleState={reference:labReference,fp:null,since:0,verify:null};
@@ -2288,7 +2285,7 @@ labAlbumLatestSession().then(s=>{
  if(!labAlbumCurrent&&s)labAlbumText('Saved photos from a previous game may be available. Press Save All Move Photos to export them.');
 }).catch(()=>{});
 
-function labAcceptPhoto(photo,fp){labVerify=null;const colorModel=labColorLearn(photo,game),threshold=Math.max(.1,Math.min(2,Number($('labThreshold').value)||.5)),raw=Logic.gridToOcc(Logic.classicalGrid(photo,640,threshold).grid,'bottom');labReference={photo,fp,colorModel,raw,base:labBaseScan(photo,colorModel,rot,Logic.occFromChess(game))};labLastObservation=null;labObservationSince=0;labFen=game.fen();labLastFrame=fp;labStableAt=0;labMotion=false;labPending=null;$('labCandidates').replaceChildren();labDraw('labPrevious',photo);}
+function labAcceptPhoto(photo,fp){labPixelWatchReset();labVerify=null;const colorModel=labColorLearn(photo,game),threshold=Math.max(.1,Math.min(2,Number($('labThreshold').value)||.5)),raw=Logic.gridToOcc(Logic.classicalGrid(photo,640,threshold).grid,'bottom');labReference={photo,fp,colorModel,raw,base:labBaseScan(photo,colorModel,rot,Logic.occFromChess(game))};labLastObservation=null;labObservationSince=0;labFen=game.fen();labLastFrame=fp;labStableAt=0;labMotion=false;labPending=null;$('labCandidates').replaceChildren();labDraw('labPrevious',photo);}
 function labCommit(m,photo,fp){const old=game.fen(),played=game.move({from:m.from,to:m.to,promotion:'q'});if(!played){labUI('Move no longer legal. Recheck the board.');return;}physicalMoveLog.push({label:played.san,fen:game.fen(),previousFen:old,illegal:false});showMoves();drawPos(null);const previous=labReference?.photo;labAlbumEnsureInitial(previous);labAcceptPhoto(photo,fp);labAlbumCapture(photo,{index:physicalMoveLog.length,label:played.san,from:played.from,to:played.to});if(previous)labDraw('labPrevious',previous);labRenderObs(labObs(photo));labUI('Recorded '+played.san+' · waiting for next move.');msg('Photo move: '+played.san);sayMove(played);if(game.game_over())labUI('Game finished. Export PGN.');}
 /* Detect promotions without testing the shape, colour or identity of the new
    piece: ALL promoted pawns are recorded as QUEENS. We still identify the
@@ -2373,7 +2370,7 @@ function labTryPixelOnlyCapture(photo,fp,now,manual,obs){
  const possible=legalCaptures.filter(m=>m.from===from);
  if(!possible.length)return false;
  const pixel=labPixelCapture(possible.map(m=>({m})),labReference.photo,photo,game.turn());
- labPixelStatus('Pixel Only capture: '+pixel.reason+
+ labPixelStatus('Pixel Test capture: '+pixel.reason+
    (pixel.details.length?' | '+pixel.details.join(' · '):''));
  if(pixel.move){
   const key='capture:'+game.fen()+':'+pixel.move.from+'-'+pixel.move.to;
@@ -2385,7 +2382,7 @@ function labTryPixelOnlyCapture(photo,fp,now,manual,obs){
    if(now-labSimpleState.verify.since<300)return true;
   }
   labCommit(pixel.move,photo,fp);
-  labSimpleStatus('Pixel Only: capture '+pixel.move.san+' detected by Pixel Capture method.');
+  labSimpleStatus('Pixel Test: capture '+pixel.move.san+' detected by Pixel Capture method.');
   labUI('Recorded '+pixel.move.san+' using Pixel Capture, not simple-move pixels.');
   return true;
  }
@@ -2414,32 +2411,106 @@ function labTryPixelOnlySpecial(photo,fp,obs){
  labUI('Recorded special move '+m.san+' using existing legal occupancy logic.');
  return true;
 }
-function labAnalyze(forceBaseline=false,manual=false,oneShotSimple=false){
+
+/* Pixel Test = quiet-move pixel engine + pixel capture engine, as one
+   logical detector. Only the detection routing changes: starting-board
+   calibration and all recording features are untouched. */
+function labRunPixelTest(photo,fp,now,manual,observed){
+ if(!labReference||labFen!==game.fen()){
+  labPixelStatus('Pixel Test: waiting for a confirmed starting/current photo.');
+  return false;
+ }
+ const obs=observed||labObs(photo);
+ if(labTryQueenPromotion(photo,fp,obs))return true;
+ if(labTryPixelOnlyCapture(photo,fp,now,manual,obs))return true;
+ if(labTryPixelOnlySpecial(photo,fp,obs))return true;
+ return labTrySimple(photo,fp,now,manual,true);
+}
+// For the combined mode, the 2-second clock starts when ONE piece source
+// disappears compared with the last confirmed position. If the original
+// occupancy classifier misses it, independent pixel-source evidence can
+// start the same clock. A different source resets the timer.
+let labPixelWatch={reference:null,fen:'',from:null,since:0,lastSeen:0,lastProbe:0};
+function labPixelWatchReset(){
+ labPixelWatch={reference:null,fen:'',from:null,since:0,lastSeen:0,lastProbe:0};
+}
+function labPixelWatchSource(obs,photo,fp,now){
+ if(!labReference||labFen!==game.fen())return null;
+ const state=labPixelWatch;
+ if(state.reference!==labReference||state.fen!==game.fen()){
+  labPixelWatchReset();
+  labPixelWatch.reference=labReference;
+  labPixelWatch.fen=game.fen();
+ }
+ const current=Logic.occFromChess(game),board=game.board(),turn=game.turn();
+ const lost=[];
+ for(let i=0;i<64;i++){
+  if(!current[i]||obs.occ[i])continue;
+  const piece=board[7-(i>>3)][i&7];
+  if(piece?.color===turn)lost.push(Logic.sqName(i));
+ }
+ let from=lost.length===1?lost[0]:null;
+ // Only run the extra photo-based watch probe if classical occupancy
+ // has NOT found one source. Limit it to about once per 750 ms to avoid
+ // slowing down the original Camera Lab path.
+ if(!from&&lost.length===0&&now-labPixelWatch.lastProbe>750&&
+    labDifference(labReference.fp,fp)>2.3){
+  labPixelWatch.lastProbe=now;
+  const picture=labSimpleEngine.capture(labReference.photo,photo);
+  if(picture){
+   const sources=game.moves({verbose:true}).map(m=>m.from);
+   const candidates=[...new Set(sources)].filter(s=>picture.bySquare[s]?.sourceOK)
+    .sort((a,b)=>picture.bySquare[b].fromScore-picture.bySquare[a].fromScore);
+   if(candidates.length===1||candidates.length>1&&
+      picture.bySquare[candidates[0]].fromScore>
+      picture.bySquare[candidates[1]].fromScore*1.55)from=candidates[0];
+  }
+ }
+ if(!from){
+  if(now-labPixelWatch.lastSeen>900){
+   labPixelWatch.from=null;labPixelWatch.since=0;
+  }
+  return labPixelWatch.from&&labPixelWatch.since?labPixelWatch:null;
+ }
+ if(labPixelWatch.from!==from){
+  labPixelWatch.from=from;labPixelWatch.since=now;
+  labPixelStatus('Camera Lab checking '+from+'; Pixel Test will take over if unresolved after 2 seconds.');
+ }
+ labPixelWatch.lastSeen=now;
+ return labPixelWatch;
+}
+
+function labAnalyze(forceBaseline=false,manual=false){
  if(mode!=='rec'||!game||!stream){labUI('Finish board calibration and starting-position verification first.');return;}
  const p=labPhoto(640,true);if(!p){labUI('Cannot refine photo; check all four locked corners.');return;}
  const fp=labFingerprint(p,640),now=performance.now();
- const simpleMode=$('labSimpleMode').value;
- const simpleReady=!!labReference&&labFen===game.fen()&&!forceBaseline;
- if(simpleReady&&(oneShotSimple||simpleMode==='only')){
-  // Keep original calibration, but choose the detector by the move's
-  // occupancy pattern: captures use Pixel Capture, not quiet-move pixels.
+ const pixelMode=$('labPixelMode').value;
+ const pixelReady=!!labReference&&labFen===game.fen()&&!forceBaseline;
+ if(pixelReady&&pixelMode==='only'){
+  // Pixel Test ONLY: quiet moves + captures; initial calibration unchanged.
   st(2,'64 squares ✓','ok');
   labLastPhoto=p;
   labDraw('labPrevious',labReference.photo);labDraw('labCurrent',p);
   if(!manual&&!labSimpleStable(fp,now,false)){
-   labUI('Pixel only: waiting for the camera photo to stabilize.');return;
+   labUI('Pixel Test: waiting for a stable chessboard photo.');return;
   }
-  const obs=labObs(p); // occupancy ONLY for routing; not for capture scoring
-  if(labTryQueenPromotion(p,fp,obs))return;
-  if(labTryPixelOnlyCapture(p,fp,now,manual,obs))return;
-  if(labTryPixelOnlySpecial(p,fp,obs))return;
-  labTrySimple(p,fp,now,manual,true);
+  labRunPixelTest(p,fp,now,manual);
   return;
  }
  const obs=labObs(p,!forceBaseline);if(labReference)labDraw('labPrevious',labReference.photo);labLastPhoto=p;labDraw('labCurrent',p);labRenderObs(obs);
  const cur=Logic.occFromChess(game),none=Logic.dist(cur,obs.occ);
  const observation=Array.from(obs.occ).join('');
- const simpleStable=simpleReady&&simpleMode==='fallback'?labSimpleStable(fp,now,manual):false;
+ // Camera Lab always gets first attempt. A stable, unresolved source
+ // vacancy for two full seconds is the ONLY automatic Pixel Test trigger.
+ if(pixelReady&&pixelMode==='fallback'&&!game.game_over()){
+  const watch=labPixelWatchSource(obs,p,fp,now);
+  const stable=labSimpleStable(fp,now,manual);
+  if(watch?.since&&now-watch.since>=2000&&(manual||stable)){
+   labPixelStatus('2-second Camera Lab timeout for '+watch.from+'; Pixel Test checking both move types.');
+   labRunPixelTest(p,fp,now,manual,obs);
+   return;
+  }
+ }
  // The original starting-position calibration and occupancy gate are unchanged.
  if(!manual&&observation!==labLastObservation){
   labLastObservation=observation;labObservationSince=now;labVerify=null;labPending=null;$('labCandidates').replaceChildren();
@@ -2466,45 +2537,27 @@ function labAnalyze(forceBaseline=false,manual=false,oneShotSimple=false){
  // Pixel-only decisions already ran above, independently of this branch.
  const ranked=Logic.rankMoves(game,obs.occ);if(!ranked.length)return;
  if(none===0){
-  if(simpleMode==='fallback'&&(manual||simpleStable)&&labTrySimple(p,fp,now,manual))return;
   labVerify=null;labPending=null;$('labCandidates').replaceChildren();labUI('No occupancy change detected. Waiting for a move.');return;
  }
  const best=ranked[0],ties=ranked.filter(x=>x.d===best.d);
- // Run the optional pixel tracker before either the single-legal-move or
- // multiple-capture branches, and only for the exact ordinary-capture pattern.
- const pixelOn=$('labPixelTest').checked;
- const pixelCandidates=pixelOn?labPixelCaptureCandidates(cur,obs.occ,ranked):[];
- if(pixelCandidates.length){
-  const pixel=labPixelCapture(pixelCandidates,labReference.photo,p,game.turn());
-  labPixelStatus('Pixel Test: '+pixel.reason+(pixel.details.length?' | '+pixel.details.join(' · '):''));
-  if(pixel.move&&labBaseSupportsMove(pixel.move,obs,cur,labReference,true)){
-   const key='pixel:'+pixel.move.from+pixel.move.to;
-   if(manual||(labVerify?.colorKey===key&&now-labVerify.since>=300)){
-    labCommit(pixel.move,p,fp);labUI('Recorded '+pixel.move.san+' · capture resolved by Pixel Test.');return;
-   }
-   if(labVerify?.colorKey!==key)labVerify={colorKey:key,since:now};
-   labPending=null;$('labCandidates').replaceChildren();labUI('Verifying Pixel Test capture: '+pixel.move.san+'…');return;
-  }
- }else if(pixelOn)labPixelStatus('Pixel Test: waiting for an ordinary capture (one vacant, none newly occupied).');
- // Pixel mode does not fall back to the old learned-colour capture test.
- // An uncertain pixel-only capture proceeds to manual candidates/rescan.
- if(!pixelCandidates.length&&best.d===0&&ties.length===1&&!best.m.promotion&&labBaseSupportsMove(best.m,obs,cur,labReference)){
+ // Original Camera Lab gets its own normal-move and capture logic.
+ // The combined Pixel Test (both pixel engines) is invoked ONLY after
+ // the timed 2-second timeout above.
+ if(best.d===0&&ties.length===1&&!best.m.promotion&&labBaseSupportsMove(best.m,obs,cur,labReference)){
   if(!obs.suppressed.length||manual){labCommit(best.m,p,fp);return;}
   const key='base:'+best.m.from+best.m.to;
   if(labVerify?.colorKey===key&&now-labVerify.since>=300){labCommit(best.m,p,fp);labUI('Recorded '+best.m.san+' · height projection filtered by base evidence.');return;}
   if(labVerify?.colorKey!==key)labVerify={colorKey:key,since:now};labPending=null;$('labCandidates').replaceChildren();labUI('Checking piece base: '+best.m.san+'…');return;
  }
- const colorMove=pixelCandidates.length?null:labColorCapture(ties,obs.colors,game,labReference.colorModel);
+ const colorMove=labColorCapture(ties,obs.colors,game,labReference.colorModel);
  if(colorMove&&labBaseSupportsMove(colorMove,obs,cur,labReference)){
   const key=colorMove.from+colorMove.to;
   if(manual||(labVerify?.colorKey===key&&now-labVerify.since>=300)){labCommit(colorMove,p,fp);labUI('Recorded '+colorMove.san+' · capture resolved by piece color.');return;}
   if(labVerify?.colorKey!==key)labVerify={colorKey:key,since:now};
   labPending=null;$('labCandidates').replaceChildren();labUI('Checking capture color change: '+colorMove.san+'…');return;
  }
- // When the original detector has no unique reliable result, use the
- // independent piece-texture / pixel-occupancy fallback. Captures keep
- // their separate Pixel Test and do not enter the quiet-move fallback.
- if(simpleMode==='fallback'&&!pixelCandidates.length&&(manual||simpleStable)&&labTrySimple(p,fp,now,manual))return;
+ // If original detection remains uncertain, the shared Pixel Test timer
+ // above will engage after two seconds of a detected source vacancy.
  labVerify=null;
  if(best.d>=none&&!manual){labPending=null;$('labCandidates').replaceChildren();labUI('Unclear photo; automatically checking again.');return;}
  if(!manual&&best.d>0&&now-labObservationSince<1600){labUI('Some squares disagree · automatically checking again.');return;}
@@ -2513,7 +2566,7 @@ function labAnalyze(forceBaseline=false,manual=false,oneShotSimple=false){
  const options=ranked.filter(x=>x.d===best.d).slice(0,12);
  for(const x of options){const moves=[x.m];for(const m of moves){const b=document.createElement('button');b.textContent=m.san+' ('+x.d+' mismatch)';b.onclick=()=>{if(labPending&&labPending.fen===game.fen())labCommit(m,p,fp)};dst.append(b);}}
  const retry=document.createElement('button');retry.textContent='Rescan / reject';retry.onclick=()=>{labPending=null;dst.replaceChildren();labLastObservation=null;labObservationSince=0;labUI('Rescanning automatically.');};dst.append(retry);
- labUI(pixelCandidates.length?'Pixel Test uncertain. Confirm the actual capture, or rescan.':'Ambiguous occupancy or piece color ('+best.d+' mismatches). Confirm the actual move, or rescan.');
+ labUI('Camera Lab: ambiguous occupancy or piece color ('+best.d+' mismatches). Pixel Test will try after the 2-second source timeout; confirm or rescan.');
 }
 function labStep(){
  if(mode!==labMode){labMode=mode;labReset();}
@@ -2535,26 +2588,17 @@ function labModeChanged(){
  if(mode==='rec'&&!labReference)msg(auto?'Waiting for automatic starting-position photo.':'Board locked. Tap Capture & Analyze now to capture the starting position.');
 }
 $('labAuto').onchange=labModeChanged;$('labManual').onchange=labModeChanged;
-$('labSimpleMode').onchange=()=>{
+$('labPixelMode').onchange=()=>{
+ labPixelWatchReset();
  labSimpleState={reference:null,fp:null,since:0,verify:null};
+ labVerify=null;labPending=null;labLastObservation=null;labObservationSince=0;
  $('labCandidates').replaceChildren();
- const x=$('labSimpleMode').value;
- labSimpleStatus(x==='off'?'Simple detector OFF: Camera Lab original logic only.':
-   x==='fallback'?'Simple detector FALLBACK: runs only if original recognition is uncertain.':
-   'Simple detector PIXEL ONLY: simple moves use pixel occupancy, captures use Pixel Capture, promotions auto-Queen.');
-};
-$('labSimpleNow').onclick=()=>{
- if(mode!=='rec'||!game||!labReference||labFen!==game.fen()){
-  labSimpleStatus('Please complete original board calibration and confirm a reference photo first.');return;
- }
- // One-shot probe: does not change the current 3-way selector or reset setup.
- labAnalyze(false,true,true);
-};
-$('labPixelTest').onchange=()=>{
- const on=$('labPixelTest').checked;
- $('labPixelState').textContent=on?'ON':'OFF';
- labVerify=null;labPending=null;$('labCandidates').replaceChildren();
- labPixelStatus(on?'Pixel Test enabled · waiting for a possible capture.':'Pixel Test disabled · original capture detection active.');
+ const modeName=$('labPixelMode').value;
+ labPixelStatus(modeName==='off'?
+  'Camera Lab ONLY: original detection. Pixel Test disabled.':
+  modeName==='only'?
+  'Pixel Test ONLY: pixel simple-move + pixel capture together. Original board calibration retained.':
+  'COMBINED: Camera Lab first; when one source square is vacant for 2 seconds without a recorded move, Pixel Test checks both quiet moves and captures.');
 };
 $('labCapture').onclick=()=>{labPending=null;labAnalyze(false,true)};
 $('labBaseline').onclick=()=>labAnalyze(true,true);
