@@ -591,19 +591,10 @@ function finishMove(x,features,pixels,piece){
  if(game.in_checkmate()){msg('Checkmate! Game over. Export PGN.');spk('Checkmate!')}else if(game.game_over())msg('Game over. Draw. Export PGN.');
 }
 function requestPromotion(x,features,pixels){
- if(promotionPending)return;
- promotionPending={x,features,pixels};
- $('promotionMessage').textContent='Choose Queen, Rook, Knight or Bishop (3 seconds).';
- $('promotionPrompt').classList.add('open');
- msg('Pawn promotion: select a piece on screen.');
- beep(880,.12,.5);
- promotionTimers.push(setTimeout(()=>{
-  if(!promotionPending)return;
-  $('promotionMessage').textContent='Please choose a promotion piece! 3 more seconds; then Queen will be selected automatically.';
-  msg('Pawn promotion: second request — choose a piece (3 seconds).');
-  beep(880,.12,.5);beep(880,.12,.5,'sine',.2);
- },3000));
- promotionTimers.push(setTimeout(()=>choosePromotion('q'),6000));
+ // Automatic queen promotion: no piece-classification test or chooser.
+ // The move's source/destination is already resolved by the scanner.
+ cancelPromotion();
+ finishMove(x,features,pixels,'q');
 }
 function choosePromotion(piece){
  const pending=promotionPending;if(!pending)return;
@@ -1955,7 +1946,7 @@ const labSimpleEngine = (() => {
     reason:clear?'Confirmed by independent occupancy and texture pixels.':
       'Pixel move candidates are ambiguous, or conflict with chess.js. Manual confirmation needed.'};
  }
- return {evaluate};
+ return {evaluate,capture};
 })();
 let labSimpleState={reference:null,fp:null,since:0,verify:null};
 function labSimpleStatus(text){$('labSimpleStatus').textContent=text;}
@@ -2298,7 +2289,131 @@ labAlbumLatestSession().then(s=>{
 }).catch(()=>{});
 
 function labAcceptPhoto(photo,fp){labVerify=null;const colorModel=labColorLearn(photo,game),threshold=Math.max(.1,Math.min(2,Number($('labThreshold').value)||.5)),raw=Logic.gridToOcc(Logic.classicalGrid(photo,640,threshold).grid,'bottom');labReference={photo,fp,colorModel,raw,base:labBaseScan(photo,colorModel,rot,Logic.occFromChess(game))};labLastObservation=null;labObservationSince=0;labFen=game.fen();labLastFrame=fp;labStableAt=0;labMotion=false;labPending=null;$('labCandidates').replaceChildren();labDraw('labPrevious',photo);}
-function labCommit(m,photo,fp){const old=game.fen(),played=game.move({from:m.from,to:m.to,promotion:m.promotion||'q'});if(!played){labUI('Move no longer legal. Recheck the board.');return;}physicalMoveLog.push({label:played.san,fen:game.fen(),previousFen:old,illegal:false});showMoves();drawPos(null);const previous=labReference?.photo;labAlbumEnsureInitial(previous);labAcceptPhoto(photo,fp);labAlbumCapture(photo,{index:physicalMoveLog.length,label:played.san,from:played.from,to:played.to});if(previous)labDraw('labPrevious',previous);labRenderObs(labObs(photo));labUI('Recorded '+played.san+' · waiting for next move.');msg('Photo move: '+played.san);sayMove(played);if(game.game_over())labUI('Game finished. Export PGN.');}
+function labCommit(m,photo,fp){const old=game.fen(),played=game.move({from:m.from,to:m.to,promotion:'q'});if(!played){labUI('Move no longer legal. Recheck the board.');return;}physicalMoveLog.push({label:played.san,fen:game.fen(),previousFen:old,illegal:false});showMoves();drawPos(null);const previous=labReference?.photo;labAlbumEnsureInitial(previous);labAcceptPhoto(photo,fp);labAlbumCapture(photo,{index:physicalMoveLog.length,label:played.san,from:played.from,to:played.to});if(previous)labDraw('labPrevious',previous);labRenderObs(labObs(photo));labUI('Recorded '+played.san+' · waiting for next move.');msg('Photo move: '+played.san);sayMove(played);if(game.game_over())labUI('Game finished. Export PGN.');}
+/* Detect promotions without testing the shape, colour or identity of the new
+   piece: ALL promoted pawns are recorded as QUEENS. We still identify the
+   physical from/to squares so camera noise cannot fabricate a promotion. */
+function labTryQueenPromotion(photo,fp,obs){
+ const promotions=game.moves({verbose:true}).filter(m=>m.promotion==='q');
+ if(!promotions.length)return false;
+ const current=Logic.occFromChess(game);
+ const exact=promotions.filter(m=>Logic.dist(Logic.predicted(current,m),obs.occ)===0);
+ if(exact.length===1&&Logic.dist(current,obs.occ)>0){
+  labCommit(exact[0],photo,fp);
+  labUI('Pawn promoted automatically to Queen ('+exact[0].from+' → '+exact[0].to+').');
+  labSimpleStatus('Queen promotion: piece type tests bypassed.');
+  return true;
+ }
+ // When the original occupancy is confused by a tall promoted piece,
+ // identify an emptied pawn source plus a changed legal destination using
+ // the independent photo-pixel analysis. No Queen/rook/knight/bishop tests.
+ const sample=labSimpleEngine.capture(labReference.photo,photo);
+ if(!sample)return false;
+ const possible=promotions.filter(m=>{
+  const from=sample.bySquare[m.from],to=sample.bySquare[m.to];
+  return !!from?.sourceOK &&
+    (m.captured?to?.pixel>=Math.max(sample.threshold*1.3,14):to?.destOK);
+ });
+ if(possible.length===1){
+  const m=possible[0];labCommit(m,photo,fp);
+  labUI('Pawn promoted automatically to Queen ('+m.from+' → '+m.to+').');
+  labSimpleStatus('Queen promotion: all promoted-piece matching tests bypassed.');
+  return true;
+ }
+ if(possible.length>1){
+  const dst=$('labCandidates');dst.replaceChildren();
+  for(const m of possible){
+   const btn=document.createElement('button');
+   btn.textContent='Queen promotion '+m.from+' → '+m.to;
+   btn.onclick=()=>{if(labFen===game.fen())labCommit(m,photo,fp);};
+   dst.appendChild(btn);
+  }
+  labUI('Promotion destination uncertain. Select the square; promotion will automatically be a Queen.');
+  return true;
+ }
+ return false;
+}
+/* In Pixel Only mode use the actual Pixel Capture Detector for captures.
+   The previous code returned through the quiet-move detector before
+   captures had a chance to run. Piece-colour learning is NOT consulted;
+   the pixel capture algorithm uses its own pixel extraction and shape.
+   The existing occupancy classifier supplies only a possible source. */
+function labTryPixelOnlyCapture(photo,fp,now,manual,obs){
+ const current=Logic.occFromChess(game),vacant=[],added=[];
+ for(let i=0;i<64;i++){
+  if(current[i]&&!obs.occ[i])vacant.push(i);
+  else if(!current[i]&&obs.occ[i])added.push(i);
+ }
+ const legalCaptures=game.moves({verbose:true}).filter(m=>m.captured&&!m.flags.includes('e')&&!m.promotion);
+ if(!legalCaptures.length)return false;
+ const sample=labSimpleEngine.capture(labReference.photo,photo);
+ const sourceStrong=s=>!!sample?.bySquare[s]?.sourceOK;
+ const sourceNames=[...new Set(legalCaptures.map(m=>m.from))];
+ let from=null;
+ if(vacant.length===1&&added.length===0){
+  const sq=Logic.sqName(vacant[0]);
+  if(sourceNames.includes(sq))from=sq;
+ }
+ if(!from&&sample){
+  // Classical occupancy can be unreliable with tall pieces. Only a clear
+  // emptied source that belongs to the player to move can trigger capture.
+  const sources=sourceNames.filter(sourceStrong).sort(
+    (a,b)=>sample.bySquare[b].fromScore-sample.bySquare[a].fromScore
+  );
+  if(sources.length===1||sources.length>1&&
+      sample.bySquare[sources[0]].fromScore>sample.bySquare[sources[1]].fromScore*1.45){
+   const candidate=sources[0];
+   const quietDest=game.moves({verbose:true}).some(m=>m.from===candidate&&!m.captured&&!m.promotion&&
+     !m.flags.includes('e')&&!m.flags.includes('k')&&!m.flags.includes('q')&&
+     sample.bySquare[m.to]?.destOK);
+   if(!quietDest&&!(vacant.length===1&&added.length===1))from=candidate;
+  }
+ }
+ if(!from)return false;
+ const possible=legalCaptures.filter(m=>m.from===from);
+ if(!possible.length)return false;
+ const pixel=labPixelCapture(possible.map(m=>({m})),labReference.photo,photo,game.turn());
+ labPixelStatus('Pixel Only capture: '+pixel.reason+
+   (pixel.details.length?' | '+pixel.details.join(' · '):''));
+ if(pixel.move){
+  const key='capture:'+game.fen()+':'+pixel.move.from+'-'+pixel.move.to;
+  if(!manual){
+   if(labSimpleState.verify?.key!==key){
+    labSimpleState.verify={key,since:now};
+    labUI('Pixel Capture: verifying '+pixel.move.san+'…');return true;
+   }
+   if(now-labSimpleState.verify.since<300)return true;
+  }
+  labCommit(pixel.move,photo,fp);
+  labSimpleStatus('Pixel Only: capture '+pixel.move.san+' detected by Pixel Capture method.');
+  labUI('Recorded '+pixel.move.san+' using Pixel Capture, not simple-move pixels.');
+  return true;
+ }
+ // Do not send a capture-looking situation back to quiet-move detection.
+ // The user can confirm one of the legal captures, or rescan.
+ const dst=$('labCandidates');dst.replaceChildren();
+ for(const m of possible){
+  const btn=document.createElement('button');
+  btn.textContent='Confirm capture '+m.san;
+  btn.onclick=()=>{if(labFen===game.fen())labCommit(m,photo,fp);};
+  dst.appendChild(btn);
+ }
+ labSimpleStatus('Pixel Capture uncertain ('+from+'). '+pixel.reason);
+ labUI('Possible capture from '+from+'. Pixel Capture uncertain — confirm or rescan.');
+ return true;
+}
+function labTryPixelOnlySpecial(photo,fp,obs){
+ const current=Logic.occFromChess(game);
+ if(Logic.dist(current,obs.occ)===0)return false;
+ const matching=Logic.rankMoves(game,obs.occ).filter(x=>x.d===0&&(
+   x.m.flags.includes('e')||x.m.flags.includes('k')||x.m.flags.includes('q')
+ ));
+ if(matching.length!==1)return false;
+ const m=matching[0].m;
+ labCommit(m,photo,fp);
+ labUI('Recorded special move '+m.san+' using existing legal occupancy logic.');
+ return true;
+}
 function labAnalyze(forceBaseline=false,manual=false,oneShotSimple=false){
  if(mode!=='rec'||!game||!stream){labUI('Finish board calibration and starting-position verification first.');return;}
  const p=labPhoto(640,true);if(!p){labUI('Cannot refine photo; check all four locked corners.');return;}
@@ -2306,15 +2421,18 @@ function labAnalyze(forceBaseline=false,manual=false,oneShotSimple=false){
  const simpleMode=$('labSimpleMode').value;
  const simpleReady=!!labReference&&labFen===game.fen()&&!forceBaseline;
  if(simpleReady&&(oneShotSimple||simpleMode==='only')){
-  // TRUE PIXEL ONLY: after the ORIGINAL first-board calibration is done,
-  // do not run the original occupancy, base/ghost or piece-colour tests.
-  // This is the same independent 2-photo path as the standalone detector.
+  // Keep original calibration, but choose the detector by the move's
+  // occupancy pattern: captures use Pixel Capture, not quiet-move pixels.
   st(2,'64 squares ✓','ok');
   labLastPhoto=p;
   labDraw('labPrevious',labReference.photo);labDraw('labCurrent',p);
   if(!manual&&!labSimpleStable(fp,now,false)){
    labUI('Pixel only: waiting for the camera photo to stabilize.');return;
   }
+  const obs=labObs(p); // occupancy ONLY for routing; not for capture scoring
+  if(labTryQueenPromotion(p,fp,obs))return;
+  if(labTryPixelOnlyCapture(p,fp,now,manual,obs))return;
+  if(labTryPixelOnlySpecial(p,fp,obs))return;
   labTrySimple(p,fp,now,manual,true);
   return;
  }
@@ -2342,6 +2460,9 @@ function labAnalyze(forceBaseline=false,manual=false,oneShotSimple=false){
   labAcceptPhoto(p,fp);labAlbumEnsureInitial(p);obs.colors=labColorRead(p,obs.occ,labReference.colorModel);labRenderObs(obs);st(3,none===0?'position verified ✓':'confirmed by user','ok');st(4,'recording – play!','ok');prog(1);$('modelStatus').textContent='Photo occupancy: ready';msg('READY – play one move at a time.');readySnd();spk('Board ready. Start playing.');labUI('Reference photo captured. Play one move, then remove your hands.');return;
  }
  if(game.game_over())return;
+ // A legal pawn reaching its final rank is ALWAYS crowned as a queen.
+ // Bypass all tests for the promoted piece type, in every detector mode.
+ if(labTryQueenPromotion(p,fp,obs))return;
  // Pixel-only decisions already ran above, independently of this branch.
  const ranked=Logic.rankMoves(game,obs.occ);if(!ranked.length)return;
  if(none===0){
@@ -2390,7 +2511,7 @@ function labAnalyze(forceBaseline=false,manual=false,oneShotSimple=false){
  if(!manual&&labPending?.fen===game.fen()&&labPending.observation===observation)return;
  labPending={photo:p,fp,fen:game.fen(),observation};const dst=$('labCandidates');dst.replaceChildren();
  const options=ranked.filter(x=>x.d===best.d).slice(0,12);
- for(const x of options){const moves=x.m.promotion?game.moves({verbose:true}).filter(m=>m.from===x.m.from&&m.to===x.m.to):[x.m];for(const m of moves){const b=document.createElement('button');b.textContent=m.san+' ('+x.d+' mismatch)';b.onclick=()=>{if(labPending&&labPending.fen===game.fen())labCommit(m,p,fp)};dst.append(b);}}
+ for(const x of options){const moves=[x.m];for(const m of moves){const b=document.createElement('button');b.textContent=m.san+' ('+x.d+' mismatch)';b.onclick=()=>{if(labPending&&labPending.fen===game.fen())labCommit(m,p,fp)};dst.append(b);}}
  const retry=document.createElement('button');retry.textContent='Rescan / reject';retry.onclick=()=>{labPending=null;dst.replaceChildren();labLastObservation=null;labObservationSince=0;labUI('Rescanning automatically.');};dst.append(retry);
  labUI(pixelCandidates.length?'Pixel Test uncertain. Confirm the actual capture, or rescan.':'Ambiguous occupancy or piece color ('+best.d+' mismatches). Confirm the actual move, or rescan.');
 }
@@ -2420,7 +2541,7 @@ $('labSimpleMode').onchange=()=>{
  const x=$('labSimpleMode').value;
  labSimpleStatus(x==='off'?'Simple detector OFF: Camera Lab original logic only.':
    x==='fallback'?'Simple detector FALLBACK: runs only if original recognition is uncertain.':
-   'Simple detector PIXEL ONLY: quiet moves only, after original board calibration.');
+   'Simple detector PIXEL ONLY: simple moves use pixel occupancy, captures use Pixel Capture, promotions auto-Queen.');
 };
 $('labSimpleNow').onclick=()=>{
  if(mode!=='rec'||!game||!labReference||labFen!==game.fen()){
