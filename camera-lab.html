@@ -20,6 +20,91 @@ details.panel{padding:0}details>summary{padding:15px 16px;cursor:pointer;list-st
 @media(max-width:760px){body{padding-left:12px;padding-right:12px}.workspace{grid-template-columns:1fr;gap:12px}.stack{display:contents}.camera-panel{order:0}.steps-panel{order:1}.record-panel{order:2}.setup-panel{order:3}.player-panel{order:4}.diagnostics-panel{order:5}header{margin-bottom:15px}.panel{padding:13px;border-radius:15px}.local{display:none}.cv{grid-template-columns:1fr 1fr}h1{font-size:21px}}
 .lab-nav{margin:-8px 0 16px}.lab-nav a{display:inline-flex;align-items:center;color:var(--ac);text-decoration:none;font-size:13px;font-weight:700;border:1px solid var(--line);border-radius:9px;padding:9px 12px;background:var(--card)}
 .mode-picker{margin-top:14px}.mode-title{font-size:12px;font-weight:750;color:var(--mut);margin-bottom:8px}.mode-options{display:grid;grid-template-columns:1fr 1fr;gap:8px}.mode-options label{position:relative;cursor:pointer;border:1px solid var(--line);border-radius:12px;padding:11px;background:#0e1621;min-width:0;display:flex;align-items:flex-start;gap:8px}.mode-options label:has(input:checked){border-color:var(--ac);background:#15362f}.mode-options input{margin:2px 0 0;min-height:0;accent-color:var(--ac);flex:none;width:16px;height:16px}.mode-options strong,.mode-options small{display:block}.mode-options strong{font-size:13px}.mode-options small{font-size:10px;line-height:1.4;margin-top:3px}
+
+/* ---- Wide-screen operations dashboard; PRESENTATION ONLY ---- */
+body{max-width:none;width:100%;padding:clamp(12px,1.5vw,24px) clamp(14px,2vw,42px) 28px}
+header{margin:0 0 12px;padding:0 2px}
+.lab-nav{margin:0 0 14px;display:flex;gap:8px;flex-wrap:wrap}
+.lab-nav a{transition:border-color .15s,background .15s}
+.lab-nav a:hover{border-color:#55ddb188;background:#1b3038}
+.workspace{grid-template-columns:minmax(0,1.16fr) minmax(0,1fr);gap:clamp(12px,1.2vw,22px);align-items:start}
+.stack{gap:clamp(12px,1.2vw,19px)}
+.panel{border-radius:15px;padding:clamp(14px,1.2vw,22px);box-shadow:0 5px 18px #0002}
+.panel h2{font-size:15px}
+.panel-top{margin-bottom:11px}
+#stage{min-height:290px;border-radius:12px;box-shadow:0 0 0 1px #ffffff05}
+#msg{font-size:13px}
+#videoBoardHD{display:none}
+.camera-panel>.row:first-of-type{margin-top:3px}
+.camera-panel .mode-picker{margin-top:12px}
+.record-panel .cv{gap:clamp(10px,1vw,18px)}
+.record-panel .cv canvas.sq{max-width:none;width:100%;height:auto;aspect-ratio:1}
+.record-panel .cv figcaption{font-size:11px;letter-spacing:.2px}
+.record-panel .actions{gap:9px}
+.record-panel #labGrid{max-width:780px}
+.record-panel #labGrid>div{min-height:33px;display:grid;place-items:center}
+.steps-panel .steps{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px 18px}
+.steps-panel .steps li{padding:7px 9px;border:1px solid var(--line);border-radius:10px;background:#0f1925}
+#last{margin:0 0 7px;font-size:30px}
+.pipeline-panel{background:linear-gradient(145deg,#152735,#141d2a 62%);border-color:#314454}
+.pipeline-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:space-between;margin-bottom:11px}
+.pipeline-top h2{margin:0;font-size:15px}
+.pipeline-live{font-size:10px;letter-spacing:1.1px;font-weight:800;color:var(--ok);display:flex;align-items:center;gap:7px}
+.pipeline-live:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 10px #5ee1ad80}
+.pipeline-stages{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.pipeline-stage{min-width:0;padding:10px 9px;background:#0d1823;border:1px solid #2c4251;border-radius:10px}
+.pipeline-stage .stage-head{display:flex;align-items:center;gap:6px;color:var(--mut);font-size:11px;font-weight:750;white-space:nowrap}
+.pipeline-stage .stage-num{display:inline-grid;place-items:center;width:19px;height:19px;border-radius:6px;background:#1b3540;color:#7de6c5;font-size:10px}
+.pipeline-stage strong{display:block;font-size:11px;font-weight:650;color:var(--fg);margin-top:8px;line-height:1.35;overflow-wrap:anywhere;min-height:18px}
+.pipeline-stage[data-health="ok"]{border-color:#28775f;background:#102e2b}
+.pipeline-stage[data-health="bad"]{border-color:#8e4550;background:#39232c}
+.pipeline-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:9px}
+.pipeline-metric{padding:10px 11px;border:1px solid #304455;background:#101b28;border-radius:9px;min-width:0}
+.pipeline-metric .metric-label{font-size:10px;color:var(--mut);font-weight:700;letter-spacing:.3px}
+.pipeline-metric strong{display:block;color:var(--fg);font-size:14px;margin-top:4px;overflow-wrap:anywhere}
+.pipeline-fallback{margin-top:10px;border:1px solid #344a55;border-radius:10px;background:#10202b;padding:10px 12px}
+.pipeline-fallback-header{display:flex;justify-content:space-between;gap:10px;font-size:11px;color:#b3d6d2}
+.pipeline-fallback-header strong{color:var(--ac);font-variant-numeric:tabular-nums;white-space:nowrap}
+.pipeline-track{height:5px;border-radius:10px;background:#28404b;overflow:hidden;margin-top:9px}
+.pipeline-track span{display:block;height:100%;width:0%;background:linear-gradient(90deg,#59a7c3,#55ddb1);transition:width .25s}
+.pipeline-signals{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.pipeline-signal{border:1px solid #2a4051;background:#0e1927;border-radius:9px;padding:9px 11px;min-width:0}
+.pipeline-signal b{display:block;font-size:10px;color:var(--ac);letter-spacing:.6px;text-transform:uppercase;margin-bottom:5px}
+.pipeline-signal p{font-size:11px;color:#c8d4df;margin:0;line-height:1.45;overflow-wrap:anywhere;max-height:50px;overflow:auto}
+.pipeline-feed{margin-top:10px}
+.pipeline-feed summary{color:var(--mut);font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px}
+.pipeline-feed summary::before{content:"▸";color:var(--ac)}
+.pipeline-feed[open] summary::before{content:"▾"}
+.pipeline-feed ol{list-style:none;margin:7px 0 0;padding:0;max-height:132px;overflow:auto}
+.pipeline-feed li{padding:6px 0;border-top:1px solid #263b4a;font-size:11px;color:#adbecb}
+.pipeline-feed li time{color:#64d9b2;margin-right:8px;font-variant-numeric:tabular-nums}
+@media(max-width:1220px){
+ .workspace{grid-template-columns:minmax(0,1fr)}
+ .stack{display:contents}
+ .camera-panel{order:0}
+ .pipeline-panel{order:1}
+ .record-panel{order:2}
+ .steps-panel{order:3}
+ .setup-panel{order:4}
+ .diagnostics-panel{order:5}
+ .player-panel{order:6}
+}
+@media(max-width:760px){
+ body{padding:12px 12px 22px}
+ .panel{padding:13px}
+ .pipeline-stages{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .pipeline-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}
+ .pipeline-signals{grid-template-columns:1fr}
+ .steps-panel .steps{grid-template-columns:1fr 1fr}
+ #stage{min-height:190px}
+ .record-panel .cv{gap:7px}
+ .record-panel #labGrid>div{min-height:23px}
+}
+@media(max-width:420px){
+ .pipeline-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .steps-panel .steps{grid-template-columns:1fr}
+ .record-panel .cv figcaption{font-size:10px}
+}
 </style></head><body>
 <header><div class="brandmark" aria-hidden="true">♞</div><div><div class="eyebrow">Zen Mind Chess Academy</div><h1>Camera Lab</h1><div class="subtitle">Experimental move detection · independent test page</div></div><span class="local">TEST LAB</span></header>
 <nav class="lab-nav"><a href="index.html">← Main scanner</a> <a href="combined-scanner.html">Combined Detection →</a></nav><main class="workspace">
@@ -49,6 +134,35 @@ details.panel{padding:0}details>summary{padding:15px 16px;cursor:pointer;list-st
 <details class="panel diagnostics-panel"><summary>Detection diagnostics</summary><div class="detail-body"><div class="actions"><button id="b15">Yellow diagnostics: off</button><button id="cvToggle">OpenCV: loading…</button></div><div class="cv" style="margin-top:12px"><figure><figcaption>Detected position</figcaption><canvas class="sq" id="pos" width="240" height="240"></canvas></figure><figure><figcaption>Flattened board</figcaption><canvas class="sq" id="flat" width="320" height="320"></canvas></figure></div><p class="help">Red: expected piece missing. Orange: unexpected piece.</p></div></details>
 </div>
 <div class="stack">
+
+<section class="panel pipeline-panel" aria-label="Live scanner processing">
+ <div class="pipeline-top">
+  <h2>Live processing</h2><span class="pipeline-live">SCANNER MONITOR</span>
+ </div>
+ <div class="pipeline-stages">
+  <div class="pipeline-stage" id="uiStage1"><div class="stage-head"><span class="stage-num">1</span>Border</div><strong id="uiStep1">Waiting</strong></div>
+  <div class="pipeline-stage" id="uiStage2"><div class="stage-head"><span class="stage-num">2</span>64 squares</div><strong id="uiStep2">Waiting</strong></div>
+  <div class="pipeline-stage" id="uiStage3"><div class="stage-head"><span class="stage-num">3</span>Position</div><strong id="uiStep3">Waiting</strong></div>
+  <div class="pipeline-stage" id="uiStage4"><div class="stage-head"><span class="stage-num">4</span>Moves</div><strong id="uiStep4">Waiting</strong></div>
+ </div>
+ <div class="pipeline-metrics">
+  <div class="pipeline-metric"><span class="metric-label">Engine</span><strong id="uiEngine">Camera Lab + Pixel Test</strong></div>
+  <div class="pipeline-metric"><span class="metric-label">Moves recorded</span><strong id="uiCount">0</strong></div>
+  <div class="pipeline-metric"><span class="metric-label">Last move</span><strong id="uiLast">—</strong></div>
+ </div>
+ <div class="pipeline-fallback" aria-label="Pixel Test fallback timer">
+  <div class="pipeline-fallback-header"><span id="uiFallbackMsg">Watching for a source-square change</span><strong id="uiFallbackTime">—</strong></div>
+  <div class="pipeline-track"><span id="uiFallbackFill"></span></div>
+ </div>
+ <div class="pipeline-signals">
+  <div class="pipeline-signal"><b>Camera Lab status</b><p id="uiLabSignal">Waiting for camera and board calibration.</p></div>
+  <div class="pipeline-signal"><b>Pixel Test status</b><p id="uiPixelSignal">Camera Lab has priority.</p></div>
+ </div>
+ <details class="pipeline-feed">
+  <summary>Recent processing events</summary>
+  <ol id="uiEventLog"><li>Waiting for the first scanner event.</li></ol>
+ </details>
+</section>
 <section class="panel record-panel"><div class="panel-top"><h2>Photo occupancy detection</h2><span class="tag">NO ONNX</span></div>
 <div class="row"><label class="field">Occupancy threshold <input id="labThreshold" type="number" min="0.1" max="2" step="0.05" value="0.5"></label><label class="field">Stable delay (ms) <input id="labDelay" type="number" min="300" max="2000" step="100" value="500"></label></div>
 <div class="actions"><button id="labCapture" class="p">Capture &amp; Analyze now</button><button id="labBaseline">Confirm starting / current photo</button></div>
@@ -2617,6 +2731,77 @@ $('labDownload').onclick=()=>{if(!labLastPhoto){labUI('Capture a photo first.');
 $('labThreshold').onchange=()=>{labPending=null;labLastObservation=null;labObservationSince=0;$('labCandidates').replaceChildren();if(!$('labAuto').checked)labUI('Threshold updated. Tap Capture & Analyze now to test.');};
 
 $('recoverBtn').onclick=()=>labAnalyze(false,true);
+
+/* Presentation-only monitor. Reads existing scanner status/state without
+   changing any board-detection, move-inference, camera or recording paths. */
+let uiProcessLastLab='',uiProcessLastPixel='',uiProcessLastMove='',uiProcessLog=[];
+function uiProcessNote(kind,message){
+ if(!message)return;
+ const at=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+ uiProcessLog.unshift({kind,at,message:message.slice(0,180)});
+ uiProcessLog=uiProcessLog.slice(0,7);
+ const list=$('uiEventLog');list.replaceChildren();
+ for(const event of uiProcessLog){
+  const li=document.createElement('li'),clock=document.createElement('time');
+  clock.textContent=event.at;
+  li.append(clock,document.createTextNode(event.kind+': '+event.message));
+  list.append(li);
+ }
+}
+function uiProcessUpdate(){
+ const setting=$('labPixelMode').value;
+ const names={off:'Camera Lab',fallback:'Lab + Pixel Test',only:'Pixel Test only'};
+ $('uiEngine').textContent=names[setting]||'Camera Lab';
+ const total=physicalMoveLog.length;
+ $('uiCount').textContent=String(total);
+ $('uiLast').textContent=total?(physicalMoveLog[total-1].label||'—'):'—';
+ for(let n=1;n<=4;n++){
+  const step=$('s'+n),text=step.textContent.trim();
+  $('uiStep'+n).textContent=text;
+  const stage=$('uiStage'+n);
+  stage.dataset.health=step.classList.contains('ok')?'ok':step.classList.contains('bad')?'bad':'waiting';
+ }
+ const labText=$('labStatus').textContent.trim(),pixelText=$('labPixelStatus').textContent.trim();
+ $('uiLabSignal').textContent=labText;
+ $('uiPixelSignal').textContent=pixelText;
+ if(labText!==uiProcessLastLab){
+  uiProcessLastLab=labText;
+  uiProcessNote('Camera Lab',labText);
+ }
+ if(pixelText!==uiProcessLastPixel){
+  uiProcessLastPixel=pixelText;
+  uiProcessNote('Pixel Test',pixelText);
+ }
+ const lastText=total?physicalMoveLog[total-1].label||'':'';
+ if(lastText&&lastText!==uiProcessLastMove){
+  uiProcessLastMove=lastText;
+  uiProcessNote('Recorded move',lastText);
+ }
+ const label=$('uiFallbackMsg'),value=$('uiFallbackTime'),bar=$('uiFallbackFill');
+ if(mode!=='rec'||!labReference){
+  label.textContent=mode==='search'?'Locating board corners':mode==='rec'?'Verifying starting position':'Camera not ready';
+  value.textContent='—';bar.style.width='0%';
+ }else if(setting==='off'){
+  label.textContent='Original Camera Lab only';value.textContent='OFF';bar.style.width='0%';
+ }else if(setting==='only'){
+  label.textContent='Pixel Test active for all moves';value.textContent='ACTIVE';bar.style.width='100%';
+ }else{
+  const watch=labPixelWatch;
+  if(watch?.since&&watch.from){
+   const elapsed=Math.max(0,performance.now()-watch.since);
+   const remaining=Math.max(0,(2000-elapsed)/1000);
+   label.textContent='Vacant '+watch.from+' · Camera Lab first';
+   value.textContent=remaining>0?remaining.toFixed(1)+'s left':'Pixel Test ready';
+   bar.style.width=Math.min(100,elapsed/20)+'%';
+  }else{
+   label.textContent='Camera Lab monitoring · Pixel Test on standby';
+   value.textContent='2.0s';bar.style.width='0%';
+  }
+ }
+}
+uiProcessUpdate();
+setInterval(uiProcessUpdate,400);
+
 const loop=()=>{if(mode!=='rec'&&labMode==='rec'){labMode=mode;labReset();}const t=Date.now();if(stream&&V.videoWidth&&W.width){wc.drawImage(V,0,0,W.width,W.height);try{({search:searchStep,rec:labStep}[mode]||(()=>{}))()}catch(e){console.error(e)}}
 setTimeout(loop,Math.max(20,(mode=='rec'?65:250)-(Date.now()-t)))};loop();
 requestAnimationFrame(draw);
