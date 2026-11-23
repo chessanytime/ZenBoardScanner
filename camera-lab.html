@@ -56,7 +56,7 @@ details.panel{padding:0}details>summary{padding:15px 16px;cursor:pointer;list-st
 <div class="actions"><button id="labCapture" class="p">Capture &amp; Analyze now</button><button id="labBaseline">Confirm starting / current photo</button></div>
 <p id="labStatus" role="status" class="help">Start with all 32 pieces already in their standard positions. The first verified photo becomes the reference.</p><div class="cv"><figure><figcaption>Previous confirmed photo</figcaption><canvas id="labPrevious" class="sq" width="640" height="640"></canvas></figure><figure><figcaption>Latest refined photo</figcaption><canvas id="labCurrent" class="sq" width="640" height="640"></canvas></figure></div>
 <div class="row"><button id="labDownload">Download latest photo</button><button id="labDownloadAll" type="button">Save All Move Photos (ZIP)</button></div>
-<p id="labPhotoArchiveStatus" class="help" role="status" style="margin:4px 0 12px">Move photos: waiting for the first confirmed position. Each confirmed move is saved as a 640×640 JPEG.</p><div id="labGrid" style="display:grid;grid-template-columns:repeat(8,1fr);gap:2px;margin:12px 0"></div><div id="labCandidates" class="actions"></div><p class="help">W = white piece; B = black piece; ? = occupied, color uncertain; G = height projection filtered using a neighbouring piece's base; gray = empty. Red border = occupancy mismatch. Piece color helps resolve captures. If evidence is uncertain, confirm the actual legal move below.</p><hr style="border:0;border-top:1px solid var(--line);margin:16px 0"><div class="panel-top"><h2>Recorded game</h2><span class="tag">PGN</span></div><div class="move-label">Last move</div><div id="last">—</div><div id="moves">Recorded moves will appear here</div><div class="actions"><input id="manualMove" placeholder="Enter move: e4, Nf3, e2e4" aria-label="Manual chess move"><button id="addManualMove">Add move</button><button id="deleteLastMove">Undo move</button><button id="b5">Resync board</button><button id="recoverBtn">Recover missed move</button><button id="redoRecording" class="p">Restart recording</button></div><button id="b12" class="p">Export PGN file</button><textarea id="pgnbox" readonly></textarea><textarea id="illegalFenBox" readonly style="display:none" aria-label="Illegal move FEN positions"></textarea><button id="exportIllegalFen" style="display:none">Export illegal-move FEN</button><p class="help">Enter SAN or coordinate moves. Coordinate notation also supports recording physically played illegal moves.</p></section>
+<p id="labPhotoArchiveStatus" class="help" role="status" style="margin:4px 0 12px">Move photos: photo 0 = initial position; 1, 2, 3… = after each recorded move. JPG, 640×640.</p><div id="labGrid" style="display:grid;grid-template-columns:repeat(8,1fr);gap:2px;margin:12px 0"></div><div id="labCandidates" class="actions"></div><p class="help">W = white piece; B = black piece; ? = occupied, color uncertain; G = height projection filtered using a neighbouring piece's base; gray = empty. Red border = occupancy mismatch. Piece color helps resolve captures. If evidence is uncertain, confirm the actual legal move below.</p><hr style="border:0;border-top:1px solid var(--line);margin:16px 0"><div class="panel-top"><h2>Recorded game</h2><span class="tag">PGN</span></div><div class="move-label">Last move</div><div id="last">—</div><div id="moves">Recorded moves will appear here</div><div class="actions"><input id="manualMove" placeholder="Enter move: e4, Nf3, e2e4" aria-label="Manual chess move"><button id="addManualMove">Add move</button><button id="deleteLastMove">Undo move</button><button id="b5">Resync board</button><button id="recoverBtn">Recover missed move</button><button id="redoRecording" class="p">Restart recording</button></div><button id="b12" class="p">Export PGN file</button><textarea id="pgnbox" readonly></textarea><textarea id="illegalFenBox" readonly style="display:none" aria-label="Illegal move FEN positions"></textarea><button id="exportIllegalFen" style="display:none">Export illegal-move FEN</button><p class="help">Enter SAN or coordinate moves. Coordinate notation also supports recording physically played illegal moves.</p></section>
 <details class="panel player-panel"><summary>Player details (optional)</summary><div class="detail-body"><div class="row"><label class="field">White player<input id="whiteName" placeholder="Name"></label><label class="field">Black player<input id="blackName" placeholder="Name"></label></div></div></details>
 </div></main>
 <div id="promotionPrompt" role="dialog" aria-modal="true" aria-labelledby="promotionTitle">
@@ -2084,7 +2084,9 @@ function labAlbumCapture(photo,info){
  if(!session)session=labAlbumStart();
  const index=info?.index??0,label=info?.label||'initial';
  const suffix=String(label).replace(/[^A-Za-z0-9_-]+/g,'_').replace(/^_+|_+$/g,'').slice(0,35)||'move';
- const filename=String(index).padStart(3,'0')+'_'+suffix+(info?.from?'_'+info.from+'-'+info.to:'')+'.jpg';
+ const filename=index===0?'0_initial_position.jpg':
+  index+'_'+suffix+(info?.from?'_'+info.from+'-'+info.to:'')+'.jpg';
+ if(index===0)session.initialQueued=true;
  // Capture references remain immutable; photo and metadata are queued in
  // the same order moves are confirmed.
  session.pending=session.pending.then(async()=>{
@@ -2099,6 +2101,12 @@ function labAlbumCapture(photo,info){
    labAlbumText(session.photos.length+' board photos collected ('+Math.max(0,session.photos.length-1)+' moves + start).'+(session.backedUp?' Recoverable after reopening.':' Local backup failed; download before closing.'));
   }
  }).catch(e=>labAlbumText('Photo capture failed: '+e.message));
+}
+function labAlbumEnsureInitial(photo){
+ if(!photo||photo.length!==640*640*4)return;
+ const session=labAlbumCurrent;
+ if(session?.initialQueued)return;
+ labAlbumCapture(photo,{index:0,label:'initial_position'});
 }
 function labAlbumUndo(index){
  const session=labAlbumCurrent;if(!session)return;
@@ -2151,7 +2159,10 @@ async function labAlbumDownload(){
    const last=await labAlbumLatestSession();
    if(last){photos=await labAlbumStoredPhotos(last.id);start=last.started;}
   }
-  if(!photos.length)throw new Error('No saved board photos yet. Record a move first.');
+  if(!photos.length)throw new Error('No saved board photos yet. Confirm the initial board position first.');
+  // Export both new and older albums with explicit 0, 1, 2… numbering.
+  photos=photos.map(p=>({...p,filename:p.index===0?'0_initial_position.jpg':
+   p.index+'_'+p.filename.replace(/^\d+_/,'')}));
   const zip=await labAlbumZip(photos);
   const a=document.createElement('a'),url=URL.createObjectURL(zip);
   a.href=url;a.download='Zen-Chess-Move-Photos-'+new Date(start||Date.now()).toISOString().replace(/[:.]/g,'-')+'.zip';
@@ -2168,7 +2179,7 @@ labAlbumLatestSession().then(s=>{
 }).catch(()=>{});
 
 function labAcceptPhoto(photo,fp){labVerify=null;const colorModel=labColorLearn(photo,game),threshold=Math.max(.1,Math.min(2,Number($('labThreshold').value)||.5)),raw=Logic.gridToOcc(Logic.classicalGrid(photo,640,threshold).grid,'bottom');labReference={photo,fp,colorModel,raw,base:labBaseScan(photo,colorModel,rot,Logic.occFromChess(game))};labLastObservation=null;labObservationSince=0;labFen=game.fen();labLastFrame=fp;labStableAt=0;labMotion=false;labPending=null;$('labCandidates').replaceChildren();labDraw('labPrevious',photo);}
-function labCommit(m,photo,fp){const old=game.fen(),played=game.move({from:m.from,to:m.to,promotion:m.promotion||'q'});if(!played){labUI('Move no longer legal. Recheck the board.');return;}physicalMoveLog.push({label:played.san,fen:game.fen(),previousFen:old,illegal:false});showMoves();drawPos(null);const previous=labReference?.photo;labAcceptPhoto(photo,fp);labAlbumCapture(photo,{index:physicalMoveLog.length,label:played.san,from:played.from,to:played.to});if(previous)labDraw('labPrevious',previous);labRenderObs(labObs(photo));labUI('Recorded '+played.san+' · waiting for next move.');msg('Photo move: '+played.san);sayMove(played);if(game.game_over())labUI('Game finished. Export PGN.');}
+function labCommit(m,photo,fp){const old=game.fen(),played=game.move({from:m.from,to:m.to,promotion:m.promotion||'q'});if(!played){labUI('Move no longer legal. Recheck the board.');return;}physicalMoveLog.push({label:played.san,fen:game.fen(),previousFen:old,illegal:false});showMoves();drawPos(null);const previous=labReference?.photo;labAlbumEnsureInitial(previous);labAcceptPhoto(photo,fp);labAlbumCapture(photo,{index:physicalMoveLog.length,label:played.san,from:played.from,to:played.to});if(previous)labDraw('labPrevious',previous);labRenderObs(labObs(photo));labUI('Recorded '+played.san+' · waiting for next move.');msg('Photo move: '+played.san);sayMove(played);if(game.game_over())labUI('Game finished. Export PGN.');}
 function labAnalyze(forceBaseline=false,manual=false,oneShotSimple=false){
  if(mode!=='rec'||!game||!stream){labUI('Finish board calibration and starting-position verification first.');return;}
  const p=labPhoto(640,true);if(!p){labUI('Cannot refine photo; check all four locked corners.');return;}
@@ -2209,7 +2220,7 @@ function labAnalyze(forceBaseline=false,manual=false,oneShotSimple=false){
   }
   if(none!==0&&!forceBaseline){st(3,none+' mismatches','bad');st(4,'waiting');labUI('Reference photo disagrees on '+none+' squares. Check orientation and position, adjust threshold or confirm the physical position manually.');return;}
   if(forceBaseline&&none!==0&&!confirm('The occupancy test disagrees on '+none+' squares. Is the physical position definitely correct?'))return;
-  labAcceptPhoto(p,fp);if(!labAlbumCurrent){labAlbumStart();labAlbumCapture(p,{index:0,label:'starting_position'});}obs.colors=labColorRead(p,obs.occ,labReference.colorModel);labRenderObs(obs);st(3,none===0?'position verified ✓':'confirmed by user','ok');st(4,'recording – play!','ok');prog(1);$('modelStatus').textContent='Photo occupancy: ready';msg('READY – play one move at a time.');readySnd();spk('Board ready. Start playing.');labUI('Reference photo captured. Play one move, then remove your hands.');return;
+  labAcceptPhoto(p,fp);labAlbumEnsureInitial(p);obs.colors=labColorRead(p,obs.occ,labReference.colorModel);labRenderObs(obs);st(3,none===0?'position verified ✓':'confirmed by user','ok');st(4,'recording – play!','ok');prog(1);$('modelStatus').textContent='Photo occupancy: ready';msg('READY – play one move at a time.');readySnd();spk('Board ready. Start playing.');labUI('Reference photo captured. Play one move, then remove your hands.');return;
  }
  if(game.game_over())return;
  // Pixel-only decisions already ran above, independently of this branch.
