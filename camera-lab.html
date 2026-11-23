@@ -569,6 +569,7 @@ function applyPhysicalMove(x,features,pixels){
  const letter=({p:'',n:'N',b:'B',r:'R',q:'Q',k:'K'})[piece.type]||'';
  const label=letter+x.from+(x.captured?'x':'-')+x.to+' (illegal)';
  physicalMoveLog.push({label,fen,previousFen,illegal:true});
+ if(mode==='rec'&&labAlbumCurrent){const picture=labPhoto(640,true);if(picture)labAlbumCapture(picture,{index:physicalMoveLog.length,label,from:x.from,to:x.to});}
  hasIllegalMoves=true;
  if(features&&pixels){acceptedFeatures=features;acceptedFlatPixels=pixels;saveLastGoodSnapshot(features,pixels)}else resetTracking();
  refF=features;prevF=null;quietCount=0;proposal='';proposalCount=0;pendingVerification=null;uncertaintySince=0;
@@ -584,6 +585,7 @@ function finishMove(x,features,pixels,piece){
  proposal='';proposalCount=0;pendingVerification=null;uncertaintySince=0;
  motionAt=performance.now();clearSettled();
  physicalMoveLog.push({label:m.san,fen:game.fen(),previousFen,illegal:false});
+ if(mode==='rec'&&labAlbumCurrent){const picture=labPhoto(640,true);if(picture)labAlbumCapture(picture,{index:physicalMoveLog.length,label:m.san,from:m.from,to:m.to});}
  m.captured?capSnd():beep(740,.08,.45);showMoves();msg('Recorded: '+m.san);sayMove(m);
  if(game.in_checkmate()){msg('Checkmate! Game over. Export PGN.');spk('Checkmate!')}else if(game.game_over())msg('Game over. Draw. Export PGN.');
 }
