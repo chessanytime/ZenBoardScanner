@@ -55,7 +55,8 @@ details.panel{padding:0}details>summary{padding:15px 16px;cursor:pointer;list-st
 <div class="row"><label class="field">Occupancy threshold <input id="labThreshold" type="number" min="0.1" max="2" step="0.05" value="0.5"></label><label class="field">Stable delay (ms) <input id="labDelay" type="number" min="300" max="2000" step="100" value="500"></label></div>
 <div class="actions"><button id="labCapture" class="p">Capture &amp; Analyze now</button><button id="labBaseline">Confirm starting / current photo</button></div>
 <p id="labStatus" role="status" class="help">Start with all 32 pieces already in their standard positions. The first verified photo becomes the reference.</p><div class="cv"><figure><figcaption>Previous confirmed photo</figcaption><canvas id="labPrevious" class="sq" width="640" height="640"></canvas></figure><figure><figcaption>Latest refined photo</figcaption><canvas id="labCurrent" class="sq" width="640" height="640"></canvas></figure></div>
-<div class="row"><button id="labDownload">Download latest photo</button></div><div id="labGrid" style="display:grid;grid-template-columns:repeat(8,1fr);gap:2px;margin:12px 0"></div><div id="labCandidates" class="actions"></div><p class="help">W = white piece; B = black piece; ? = occupied, color uncertain; G = height projection filtered using a neighbouring piece's base; gray = empty. Red border = occupancy mismatch. Piece color helps resolve captures. If evidence is uncertain, confirm the actual legal move below.</p><hr style="border:0;border-top:1px solid var(--line);margin:16px 0"><div class="panel-top"><h2>Recorded game</h2><span class="tag">PGN</span></div><div class="move-label">Last move</div><div id="last">—</div><div id="moves">Recorded moves will appear here</div><div class="actions"><input id="manualMove" placeholder="Enter move: e4, Nf3, e2e4" aria-label="Manual chess move"><button id="addManualMove">Add move</button><button id="deleteLastMove">Undo move</button><button id="b5">Resync board</button><button id="recoverBtn">Recover missed move</button><button id="redoRecording" class="p">Restart recording</button></div><button id="b12" class="p">Export PGN file</button><textarea id="pgnbox" readonly></textarea><textarea id="illegalFenBox" readonly style="display:none" aria-label="Illegal move FEN positions"></textarea><button id="exportIllegalFen" style="display:none">Export illegal-move FEN</button><p class="help">Enter SAN or coordinate moves. Coordinate notation also supports recording physically played illegal moves.</p></section>
+<div class="row"><button id="labDownload">Download latest photo</button><button id="labDownloadAll" type="button">Save All Move Photos (ZIP)</button></div>
+<p id="labPhotoArchiveStatus" class="help" role="status" style="margin:4px 0 12px">Move photos: waiting for the first confirmed position. Each confirmed move is saved as a 640×640 JPEG.</p><div id="labGrid" style="display:grid;grid-template-columns:repeat(8,1fr);gap:2px;margin:12px 0"></div><div id="labCandidates" class="actions"></div><p class="help">W = white piece; B = black piece; ? = occupied, color uncertain; G = height projection filtered using a neighbouring piece's base; gray = empty. Red border = occupancy mismatch. Piece color helps resolve captures. If evidence is uncertain, confirm the actual legal move below.</p><hr style="border:0;border-top:1px solid var(--line);margin:16px 0"><div class="panel-top"><h2>Recorded game</h2><span class="tag">PGN</span></div><div class="move-label">Last move</div><div id="last">—</div><div id="moves">Recorded moves will appear here</div><div class="actions"><input id="manualMove" placeholder="Enter move: e4, Nf3, e2e4" aria-label="Manual chess move"><button id="addManualMove">Add move</button><button id="deleteLastMove">Undo move</button><button id="b5">Resync board</button><button id="recoverBtn">Recover missed move</button><button id="redoRecording" class="p">Restart recording</button></div><button id="b12" class="p">Export PGN file</button><textarea id="pgnbox" readonly></textarea><textarea id="illegalFenBox" readonly style="display:none" aria-label="Illegal move FEN positions"></textarea><button id="exportIllegalFen" style="display:none">Export illegal-move FEN</button><p class="help">Enter SAN or coordinate moves. Coordinate notation also supports recording physically played illegal moves.</p></section>
 <details class="panel player-panel"><summary>Player details (optional)</summary><div class="detail-body"><div class="row"><label class="field">White player<input id="whiteName" placeholder="Name"></label><label class="field">Black player<input id="blackName" placeholder="Name"></label></div></div></details>
 </div></main>
 <div id="promotionPrompt" role="dialog" aria-modal="true" aria-labelledby="promotionTitle">
@@ -157,7 +158,7 @@ for(let q=0;q<64;q++){for(let k=0;k<48;k++)A[q*K+k]=Math.min(255,F[q*K+k]*g);A[q
 nm=q=>'abcdefgh'[q&7]+(8-(q>>3));
 
 /* ---------- game helpers ---------- */
-const newGame=()=>{game=new Chess();physicalMoveLog=[];hasIllegalMoves=false;showMoves()},
+const newGame=()=>{game=new Chess();physicalMoveLog=[];hasIllegalMoves=false;if(typeof labAlbumNew==='function')labAlbumNew();showMoves()},
 occ=g=>g.board().flat().map(x=>!!x),
 sq=s=>(8-parseInt(s[1]))*8+'abcdefgh'.indexOf(s[0]),
 U={p:'♟',n:'♞',b:'♝',r:'♜',q:'♛',k:'♚'};
@@ -1261,6 +1262,7 @@ function deleteRecordedLast(){
  const undone=canUndo?game.undo():null;
  if(!undone||game.fen()!==last.previousFen||game.history().length!==rebuilt.history().length)game=rebuilt;
  physicalMoveLog.pop();
+ labAlbumUndo(physicalMoveLog.length+1);
  const restoredColors=labColorPosition(game),flips=restoredColors.flatMap((color,i)=>color!=='0'&&oldColors[i]!=='0'&&color!==oldColors[i]?[i]:[]);
  syncEditedPosition();
  if($('pgnbox').style.display==='block')$('pgnbox').value=getPGN();
@@ -1294,6 +1296,7 @@ $('addManualMove').onclick=()=>{
  }
  if(!m){msg('Move not understood. Enter SAN (Nf3) or coordinates (g1f3).');return}
  physicalMoveLog.push({label:m.san,fen:game.fen(),previousFen,illegal:false});
+ if(mode==='rec'&&labAlbumCurrent){const photo=labPhoto(640,true);if(photo)labAlbumCapture(photo,{index:physicalMoveLog.length,label:m.san,from:m.from,to:m.to});}
  $('manualMove').value='';syncEditedPosition();msg('Manually recorded: '+m.san);
 };
 $('manualMove').addEventListener('keydown',e=>{if(e.key==='Enter')$('addManualMove').click()});
@@ -1306,7 +1309,7 @@ $('b2').onclick=()=>{if(stream)startSearch()};
 $('b3').onclick=()=>{if(stream&&(mode=='search'||mode=='manual'))lock(false)};
 $('viewSide').onchange=e=>{rot=Number(e.target.value);if(stream&&quad&&mode==='rec'){resetTracking();st(3,'verifying position…');st(4,'waiting');msg('Orientation updated. Keep the physical board in the recorded position while we verify the new photo.');}};
 $('b5').onclick=()=>{if(mode!=='rec'){msg('Lock the board first.');return;}resetTracking();st(3,'verifying position…');st(4,'waiting');msg('Resynced – match the physical board to the recorded position and wait for the reference photo.');};
-$('redoRecording').onclick=()=>{if(!stream||!quad||mode!=='rec'){msg('Lock the board first.');return;}newGame();$('pgnbox').value='';$('pgnbox').style.display='none';resetTracking();st(1,'locked ✓','ok');st(2,'refining photo…');st(3,'verifying starting position…');st(4,'waiting');prog(.4);drawPos(null,true);msg('Recording reset. Restore all 32 pieces to the starting position. No empty-board scan needed.');};
+$('redoRecording').onclick=()=>{if(!stream||!quad||mode!=='rec'){msg('Lock the board first.');return;}labAlbumNew();newGame();$('pgnbox').value='';$('pgnbox').style.display='none';resetTracking();st(1,'locked ✓','ok');st(2,'refining photo…');st(3,'verifying starting position…');st(4,'waiting');prog(.4);drawPos(null,true);msg('Recording reset. Restore all 32 pieces to the starting position. No empty-board scan needed.');};
 $('b8').onclick=()=>{if(cameraDevices.length>1){const active=stream?.getVideoTracks()[0]?.getSettings()?.deviceId;const idx=cameraDevices.findIndex(d=>d.deviceId===(selectedCamera||active));selectedCamera=cameraDevices[(idx+1+cameraDevices.length)%cameraDevices.length].deviceId}else{selectedCamera='';facing=facing==='environment'?'user':'environment'}if(stream)cam()};
 $('b9').onclick=e=>{snd=!snd;e.target.textContent='Sound: '+(snd?'on':'off')};
 $('b11').onclick=e=>{voice=!voice;e.target.textContent='Announce moves: '+(voice?'on':'off');if(voice)spk('Announcing moves on')};
@@ -1971,8 +1974,177 @@ function labBaseSupportsMove(m,obs,current,reference,pixelOnly=false){
 }
 function labObs(p,allowBase=true){const threshold=Math.max(.1,Math.min(2,Number($('labThreshold').value)||.5));const {grid,scores}=Logic.classicalGrid(p,640,threshold),raw=Logic.gridToOcc(grid,'bottom'),model=labFen===game?.fen()?labReference?.colorModel:null,colors=labColorRead(p,raw,model),base=allowBase&&model?labBaseScan(p,model,rot,raw):null,corrected=base?labBaseCorrect(raw,Logic.occFromChess(game),base,labReference.raw,colors):{occ:raw,suppressed:[],persistent:[]};for(const i of corrected.suppressed)colors.states[i]='0';return {grid,scores,raw,occ:corrected.occ,base,suppressed:corrected.suppressed,persistent:corrected.persistent,colors};}
 function labRenderObs(obs){const dst=$('labGrid'),expected=Logic.occFromChess(game);dst.replaceChildren();for(let r=0;r<8;r++)for(let c=0;c<8;c++){const q=r*8+c,i=Logic.cellToSq(r,c,'bottom'),el=document.createElement('div'),color=obs.colors.states[i],ghost=obs.suppressed.includes(i),name=ghost?(obs.base.owner[i]>=0?'Height projection; base on '+Logic.sqName(obs.base.owner[i]):'Unchanged false occupancy on previously confirmed empty square'):color==='w'?'White':color==='b'?'Black':color==='?'?'Color uncertain':'Empty';el.textContent=Logic.sqName(i)+(ghost?' G':color==='0'?'':' '+(color==='?'?'?':color.toUpperCase()));el.title=name+' · occupancy score '+obs.scores[q].toFixed(2);el.style.cssText='padding:5px 0;text-align:center;font-size:10px;border-radius:3px;background:'+(ghost?'#705923':color==='w'?'#e9e8da':color==='b'?'#10141c':color==='?'?'#247e63':'#273345')+';color:'+(color==='w'?'#111822':'#fff')+';border:1px solid '+(obs.occ[i]!==expected[i]?'#ff777e':'transparent');dst.append(el);}}
+
+/* Move-photo archive is independent of board calibration and move detection.
+   Capture the existing 640px flattened photo on first reference and after
+   each accepted move; store JPEGs in IndexedDB for recovery after reload.
+   ZIP writer uses the uncompressed ZIP method, as JPEGs are already compressed,
+   so no extra external dependency is required. */
+const labAlbumDBName='zen-camera-lab-move-photos-v1';
+let labAlbumDBPromise=null,labAlbumCurrent=null;
+const labAlbumText=s=>$('labPhotoArchiveStatus').textContent=s;
+function labAlbumDB(){
+ if(!('indexedDB' in window))return Promise.reject(new Error('This browser does not permit local photo storage.'));
+ if(!labAlbumDBPromise)labAlbumDBPromise=new Promise((resolve,reject)=>{
+  const r=indexedDB.open(labAlbumDBName,1);
+  r.onupgradeneeded=()=>{
+   const db=r.result;
+   if(!db.objectStoreNames.contains('sessions'))db.createObjectStore('sessions',{keyPath:'id'});
+   if(!db.objectStoreNames.contains('photos')){
+    const st=db.createObjectStore('photos',{keyPath:'key'});
+    st.createIndex('session','session',{unique:false});
+   }
+  };
+  r.onsuccess=()=>resolve(r.result);
+  r.onerror=()=>reject(r.error||new Error('Photo storage could not be opened'));
+ }).catch(e=>{labAlbumDBPromise=null;throw e;});
+ return labAlbumDBPromise;
+}
+async function labAlbumWrite(store,operation,value){
+ const db=await labAlbumDB();
+ return new Promise((resolve,reject)=>{
+  const tx=db.transaction(store,'readwrite'),st=tx.objectStore(store);
+  if(operation==='delete')st.delete(value);else st.put(value);
+  tx.oncomplete=()=>resolve();
+  tx.onerror=()=>reject(tx.error||new Error('Photo write failed'));
+  tx.onabort=()=>reject(tx.error||new Error('Photo write aborted'));
+ });
+}
+async function labAlbumLatestSession(){
+ const db=await labAlbumDB();
+ return new Promise((resolve,reject)=>{
+  const req=db.transaction('sessions','readonly').objectStore('sessions').getAll();
+  req.onsuccess=()=>resolve((req.result||[]).sort((a,b)=>b.started-a.started)[0]||null);
+  req.onerror=()=>reject(req.error);
+ });
+}
+async function labAlbumStoredPhotos(id){
+ const db=await labAlbumDB();
+ return new Promise((resolve,reject)=>{
+  const req=db.transaction('photos','readonly').objectStore('photos').index('session').getAll(id);
+  req.onsuccess=()=>resolve((req.result||[]).sort((a,b)=>a.index-b.index));
+  req.onerror=()=>reject(req.error);
+ });
+}
+function labAlbumRefreshButton(){
+ const count=labAlbumCurrent?.photos.length||0;
+ $('labDownloadAll').disabled=false;
+ $('labDownloadAll').textContent=count?'Save All Move Photos ('+count+')':'Save All Move Photos (ZIP)';
+}
+function labAlbumNew(){
+ labAlbumCurrent=null;
+ labAlbumRefreshButton();
+ labAlbumText('Move photos: a new game will be collected after its first confirmed board photo. Previous saved albums remain in browser storage.');
+}
+function labAlbumStart(){
+ const started=Date.now(),id=started+'-'+Math.random().toString(36).slice(2,9);
+ labAlbumCurrent={id,started,photos:[],pending:Promise.resolve(),backedUp:true};
+ const session=labAlbumCurrent;
+ session.pending=session.pending.then(()=>labAlbumWrite('sessions','put',{id,started}))
+   .catch(e=>{session.backedUp=false;labAlbumText('Photos still collecting in memory; local backup unavailable: '+e.message);});
+ labAlbumRefreshButton();
+ return session;
+}
+function labAlbumJpeg(photo){
+ return new Promise((resolve,reject)=>{
+  try{
+   const cv=document.createElement('canvas');cv.width=cv.height=640;
+   cv.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(photo),640,640),0,0);
+   cv.toBlob(blob=>blob&&blob.size?resolve(blob):reject(new Error('JPEG encoder returned no image')),'image/jpeg',.86);
+  }catch(e){reject(e);}
+ });
+}
+function labAlbumCapture(photo,info){
+ if(!photo||photo.length!==640*640*4)return;
+ let session=labAlbumCurrent;
+ if(!session)session=labAlbumStart();
+ const index=info?.index??0,label=info?.label||'initial';
+ const suffix=String(label).replace(/[^A-Za-z0-9_-]+/g,'_').replace(/^_+|_+$/g,'').slice(0,35)||'move';
+ const filename=String(index).padStart(3,'0')+'_'+suffix+(info?.from?'_'+info.from+'-'+info.to:'')+'.jpg';
+ // Capture references remain immutable; photo and metadata are queued in
+ // the same order moves are confirmed.
+ session.pending=session.pending.then(async()=>{
+  const blob=await labAlbumJpeg(photo),item={key:session.id+':'+String(index).padStart(5,'0'),session:session.id,index,filename,label,blob};
+  session.photos=session.photos.filter(p=>p.index!==index);
+  session.photos.push(item);session.photos.sort((a,b)=>a.index-b.index);
+  if(session.backedUp){
+   try{await labAlbumWrite('photos','put',item);}catch(e){session.backedUp=false;}
+  }
+  if(labAlbumCurrent===session){
+   labAlbumRefreshButton();
+   labAlbumText(session.photos.length+' board photos collected ('+Math.max(0,session.photos.length-1)+' moves + start).'+(session.backedUp?' Recoverable after reopening.':' Local backup failed; download before closing.'));
+  }
+ }).catch(e=>labAlbumText('Photo capture failed: '+e.message));
+}
+function labAlbumUndo(index){
+ const session=labAlbumCurrent;if(!session)return;
+ session.pending=session.pending.then(async()=>{
+  session.photos=session.photos.filter(p=>p.index!==index);
+  if(session.backedUp)try{await labAlbumWrite('photos','delete',session.id+':'+String(index).padStart(5,'0'));}catch(e){session.backedUp=false;}
+  if(labAlbumCurrent===session){
+   labAlbumRefreshButton();
+   labAlbumText(session.photos.length+' board photos remain after Undo.');
+  }
+ });
+}
+const labAlbumCrcTable=(()=>{const table=new Uint32Array(256);for(let i=0;i<256;i++){let v=i;for(let j=0;j<8;j++)v=v&1?0xedb88320^(v>>>1):v>>>1;table[i]=v>>>0;}return table;})();
+function labAlbumCrc(bytes){
+ let crc=0xffffffff;for(const x of bytes)crc=labAlbumCrcTable[(crc^x)&255]^(crc>>>8);
+ return (crc^0xffffffff)>>>0;
+}
+async function labAlbumZip(items){
+ const enc=new TextEncoder(),parts=[],central=[];let offset=0;
+ for(const item of items){
+  const name=enc.encode(item.filename),data=new Uint8Array(await item.blob.arrayBuffer());
+  const len=data.length,crc=labAlbumCrc(data);
+  // ZIP files are limited to 4GiB without ZIP64; board photos are small.
+  if(len>0xffffffff||offset>0xffffffff)throw new Error('Photo archive is too large for ZIP.');
+  const local=new Uint8Array(30+name.length),lv=new DataView(local.buffer);
+  lv.setUint32(0,0x04034b50,true);lv.setUint16(4,20,true);lv.setUint16(6,0x800,true);
+  lv.setUint16(8,0,true);lv.setUint32(14,crc,true);lv.setUint32(18,len,true);lv.setUint32(22,len,true);
+  lv.setUint16(26,name.length,true);local.set(name,30);
+  const dir=new Uint8Array(46+name.length),dv=new DataView(dir.buffer);
+  dv.setUint32(0,0x02014b50,true);dv.setUint16(4,20,true);dv.setUint16(6,20,true);
+  dv.setUint16(8,0x800,true);dv.setUint16(10,0,true);dv.setUint32(16,crc,true);
+  dv.setUint32(20,len,true);dv.setUint32(24,len,true);dv.setUint16(28,name.length,true);
+  dv.setUint32(42,offset,true);dir.set(name,46);
+  parts.push(local,data);central.push(dir);offset+=local.length+len;
+ }
+ if(items.length>65535)throw new Error('Too many images in one ZIP.');
+ const dirSize=central.reduce((s,v)=>s+v.length,0),end=new Uint8Array(22),ev=new DataView(end.buffer);
+ ev.setUint32(0,0x06054b50,true);ev.setUint16(8,items.length,true);ev.setUint16(10,items.length,true);
+ ev.setUint32(12,dirSize,true);ev.setUint32(16,offset,true);
+ return new Blob([...parts,...central,end],{type:'application/zip'});
+}
+async function labAlbumDownload(){
+ const b=$('labDownloadAll');b.disabled=true;
+ try{
+  const session=labAlbumCurrent;
+  if(session)await session.pending;
+  let photos=session?.photos.slice()||[],start=session?.started;
+  // A refreshed page can still export the last archived game.
+  if(!photos.length){
+   const last=await labAlbumLatestSession();
+   if(last){photos=await labAlbumStoredPhotos(last.id);start=last.started;}
+  }
+  if(!photos.length)throw new Error('No saved board photos yet. Record a move first.');
+  const zip=await labAlbumZip(photos);
+  const a=document.createElement('a'),url=URL.createObjectURL(zip);
+  a.href=url;a.download='Zen-Chess-Move-Photos-'+new Date(start||Date.now()).toISOString().replace(/[:.]/g,'-')+'.zip';
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+  labAlbumText('Saved '+photos.length+' photos in one ZIP ('+(zip.size/1048576).toFixed(1)+' MB). Photos remain in browser storage.');
+ }catch(e){labAlbumText('Cannot save move photos: '+e.message);}
+ finally{labAlbumRefreshButton();}
+}
+$('labDownloadAll').onclick=labAlbumDownload;
+labAlbumRefreshButton();
+labAlbumLatestSession().then(s=>{
+ if(!labAlbumCurrent&&s)labAlbumText('Saved photos from a previous game may be available. Press Save All Move Photos to export them.');
+}).catch(()=>{});
+
 function labAcceptPhoto(photo,fp){labVerify=null;const colorModel=labColorLearn(photo,game),threshold=Math.max(.1,Math.min(2,Number($('labThreshold').value)||.5)),raw=Logic.gridToOcc(Logic.classicalGrid(photo,640,threshold).grid,'bottom');labReference={photo,fp,colorModel,raw,base:labBaseScan(photo,colorModel,rot,Logic.occFromChess(game))};labLastObservation=null;labObservationSince=0;labFen=game.fen();labLastFrame=fp;labStableAt=0;labMotion=false;labPending=null;$('labCandidates').replaceChildren();labDraw('labPrevious',photo);}
-function labCommit(m,photo,fp){const old=game.fen(),played=game.move({from:m.from,to:m.to,promotion:m.promotion||'q'});if(!played){labUI('Move no longer legal. Recheck the board.');return;}physicalMoveLog.push({label:played.san,fen:game.fen(),previousFen:old,illegal:false});showMoves();drawPos(null);const previous=labReference?.photo;labAcceptPhoto(photo,fp);if(previous)labDraw('labPrevious',previous);labRenderObs(labObs(photo));labUI('Recorded '+played.san+' · waiting for next move.');msg('Photo move: '+played.san);sayMove(played);if(game.game_over())labUI('Game finished. Export PGN.');}
+function labCommit(m,photo,fp){const old=game.fen(),played=game.move({from:m.from,to:m.to,promotion:m.promotion||'q'});if(!played){labUI('Move no longer legal. Recheck the board.');return;}physicalMoveLog.push({label:played.san,fen:game.fen(),previousFen:old,illegal:false});showMoves();drawPos(null);const previous=labReference?.photo;labAcceptPhoto(photo,fp);labAlbumCapture(photo,{index:physicalMoveLog.length,label:played.san,from:played.from,to:played.to});if(previous)labDraw('labPrevious',previous);labRenderObs(labObs(photo));labUI('Recorded '+played.san+' · waiting for next move.');msg('Photo move: '+played.san);sayMove(played);if(game.game_over())labUI('Game finished. Export PGN.');}
 function labAnalyze(forceBaseline=false,manual=false,oneShotSimple=false){
  if(mode!=='rec'||!game||!stream){labUI('Finish board calibration and starting-position verification first.');return;}
  const p=labPhoto(640,true);if(!p){labUI('Cannot refine photo; check all four locked corners.');return;}
@@ -2008,7 +2180,7 @@ function labAnalyze(forceBaseline=false,manual=false,oneShotSimple=false){
   }
   if(none!==0&&!forceBaseline){st(3,none+' mismatches','bad');st(4,'waiting');labUI('Reference photo disagrees on '+none+' squares. Check orientation and position, adjust threshold or confirm the physical position manually.');return;}
   if(forceBaseline&&none!==0&&!confirm('The occupancy test disagrees on '+none+' squares. Is the physical position definitely correct?'))return;
-  labAcceptPhoto(p,fp);obs.colors=labColorRead(p,obs.occ,labReference.colorModel);labRenderObs(obs);st(3,none===0?'position verified ✓':'confirmed by user','ok');st(4,'recording – play!','ok');prog(1);$('modelStatus').textContent='Photo occupancy: ready';msg('READY – play one move at a time.');readySnd();spk('Board ready. Start playing.');labUI('Reference photo captured. Play one move, then remove your hands.');return;
+  labAcceptPhoto(p,fp);if(!labAlbumCurrent){labAlbumStart();labAlbumCapture(p,{index:0,label:'starting_position'});}obs.colors=labColorRead(p,obs.occ,labReference.colorModel);labRenderObs(obs);st(3,none===0?'position verified ✓':'confirmed by user','ok');st(4,'recording – play!','ok');prog(1);$('modelStatus').textContent='Photo occupancy: ready';msg('READY – play one move at a time.');readySnd();spk('Board ready. Start playing.');labUI('Reference photo captured. Play one move, then remove your hands.');return;
  }
  if(game.game_over())return;
  // One-shot button is independent of the selected mode. Pixel-only also
