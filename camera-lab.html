@@ -2367,6 +2367,15 @@ function labTryPixelOnlyCapture(photo,fp,now,manual,obs){
   }
  }
  if(!from)return false;
+ // A normal move may leave one observed vacant square while its new
+ // occupancy is missed by the original classifier. Prefer the quiet
+ // detector if a LEGAL empty destination has strong added-piece pixels.
+ const quietDetected=!!sample&&game.moves({verbose:true}).some(m=>
+  m.from===from&&!m.captured&&!m.promotion&&
+  !m.flags.includes('e')&&!m.flags.includes('k')&&!m.flags.includes('q')&&
+  !current[Logic.sqIndex(m.to)]&&sample.bySquare[m.to]?.destOK
+ );
+ if(quietDetected)return false;
  const possible=legalCaptures.filter(m=>m.from===from);
  if(!possible.length)return false;
  const pixel=labPixelCapture(possible.map(m=>({m})),labReference.photo,photo,game.turn());
@@ -2395,7 +2404,7 @@ function labTryPixelOnlyCapture(photo,fp,now,manual,obs){
   btn.onclick=()=>{if(labFen===game.fen())labCommit(m,photo,fp);};
   dst.appendChild(btn);
  }
- labSimpleStatus('Pixel Capture uncertain ('+from+'). '+pixel.reason);
+ labSimpleStatus('Pixel Test capture uncertain ('+from+'). '+pixel.reason);
  labUI('Possible capture from '+from+'. Pixel Capture uncertain — confirm or rescan.');
  return true;
 }
