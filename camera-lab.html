@@ -1792,11 +1792,18 @@ const labSimpleEngine = (() => {
   const sample=capture(before,after);
   if(!sample)return {move:null,clear:false,options:[],reason:'Missing or invalid 640×640 board photos.'};
   const board=chess.board(),current=Logic.occFromChess(chess),turn=chess.turn();
-  const sourcePool=sample.scores.filter(s=>{
-   const idx=Logic.sqIndex(s.sq),p=board[7-(idx>>3)][idx&7];
-   return p&&p.color===turn&&s.sourceOK;
-  }).sort((a,b)=>b.fromScore-a.fromScore);
-  const destPool=sample.scores.filter(s=>!current[Logic.sqIndex(s.sq)]&&s.destOK).sort((a,b)=>b.toScore-a.toScore);
+  // The standalone detector first identifies PHYSICAL square transitions,
+  // without asking chess.js which side is to move. If the PGN/FEN is out of
+  // sync, show the visual move rather than concealing the pixel result.
+  const sourcePool=sample.scores.filter(s=>s.sourceOK).sort((a,b)=>b.fromScore-a.fromScore);
+  const destPool=sample.scores.filter(s=>s.destOK).sort((a,b)=>b.toScore-a.toScore);
+  const physicalFrom=sourcePool[0]||null;
+  const physicalTo=destPool.find(s=>s.sq!==physicalFrom?.sq)||null;
+  const sourceUnique=!!physicalFrom&&(!sourcePool[1]||physicalFrom.fromScore>=sourcePool[1].fromScore*1.33);
+  const destRunner=destPool.filter(s=>s.sq!==physicalFrom?.sq)[1];
+  const destUnique=!!physicalTo&&(!destRunner||physicalTo.toScore>=destRunner.toScore*1.33);
+  const physicalClear=!!(physicalFrom&&physicalTo&&sourceUnique&&destUnique);
+  const visual=physicalFrom&&physicalTo?{from:physicalFrom.sq,to:physicalTo.sq,clear:physicalClear}:null;
   const legal=chess.moves({verbose:true}).filter(m=>
     !m.captured&&!m.promotion&&!m.flags.includes('e')&&!m.flags.includes('k')&&!m.flags.includes('q')&&
     current[Logic.sqIndex(m.from)]&&!current[Logic.sqIndex(m.to)]
@@ -1809,15 +1816,25 @@ const labSimpleEngine = (() => {
   }
   options.sort((a,b)=>b.score-a.score);
   const best=options[0],runner=options[1];
-  if(!best)return {move:null,clear:false,options:[],sample,sourcePool,destPool,
-   reason:'No legal quiet move has both an emptied source and a newly occupied destination.'};
-  const sourceUnique=sourcePool[0]?.sq===best.m.from&&(!sourcePool[1]||sourcePool[0].fromScore>=sourcePool[1].fromScore*1.33);
-  const destUnique=destPool[0]?.sq===best.m.to&&(!destPool[1]||destPool[0].toScore>=destPool[1].toScore*1.33);
+  if(!best){
+   let reason='No square pair satisfied the legal quiet-move test.';
+   if(visual){
+    const idx=Logic.sqIndex(visual.from),piece=board[7-(idx>>3)][idx&7];
+    const turnText=turn==='w'?'White':'Black';
+    const pieceName=piece?({p:'Pawn',n:'Knight',b:'Bishop',r:'Rook',q:'Queen',k:'King'})[piece.type]:'no piece';
+    reason='Pixel detector sees '+visual.from+' → '+visual.to+
+      (visual.clear?' (clear).':' (uncertain).')+
+      ' Current chess.js position: '+pieceName+' on '+visual.from+', '+turnText+' to move.'+
+      ' This move is not legal in the recorded position; check for a missed move or resync. Nothing was recorded.';
+   }else reason='No reliable one-vacant/one-occupied pixel pattern found.';
+   return {move:null,clear:false,options:[],sample,sourcePool,destPool,visual,reason};
+  }
+  const matchesPhysical=physicalFrom?.sq===best.m.from&&physicalTo?.sq===best.m.to;
   const legalUnique=!runner||best.score>=runner.score*1.25;
-  const clear=!!(sourceUnique&&destUnique&&legalUnique);
-  return {move:clear?best.m:null,clear,options,sourcePool,destPool,sample,
-    reason:clear?'Source became empty and destination became occupied.':
-      'More than one source/destination is plausible; manual confirmation needed.'};
+  const clear=!!(matchesPhysical&&sourceUnique&&destUnique&&legalUnique);
+  return {move:clear?best.m:null,clear,options,sourcePool,destPool,sample,visual,
+    reason:clear?'Confirmed by independent occupancy and texture pixels.':
+      'Pixel move candidates are ambiguous, or conflict with chess.js. Manual confirmation needed.'};
  }
  return {evaluate};
 })();
@@ -1828,7 +1845,11 @@ function labSimpleStable(fp,now,manual){
   labSimpleState={reference:labReference,fp:null,since:0,verify:null};
  }
  if(manual)return true;
- if(!labSimpleState.fp||labDifference(labSimpleState.fp,fp)>3.1){
+ // Slight camera jitter makes individual sampled pixels vary. Keep a
+ // conservative but usable stability tolerance, then double-check a
+ // repeat proposal before recording. The background movement detector
+ // does not control the Pixel Only path.
+ if(!labSimpleState.fp||labDifference(labSimpleState.fp,fp)>7.0){
   labSimpleState.fp=new Float32Array(fp);labSimpleState.since=now;labSimpleState.verify=null;
   return false;
  }
@@ -1842,6 +1863,7 @@ function labTrySimple(photo,fp,now,manual,only=false){
  const src=result.sourcePool||[],dst=result.destPool||[];
  const detail='Empty candidates: '+(src.length?src.slice(0,3).map(x=>x.sq).join(', '):'none')+
   ' · Occupied candidates: '+(dst.length?dst.slice(0,3).map(x=>x.sq).join(', '):'none')+
+  (result.visual?' · Visible: '+result.visual.from+' → '+result.visual.to:'')+
   (result.sample?' · threshold '+result.sample.threshold.toFixed(1):'');
  labSimpleStatus('Simple detector: '+result.reason+' '+detail);
  if(result.move){
@@ -2150,27 +2172,32 @@ function labCommit(m,photo,fp){const old=game.fen(),played=game.move({from:m.fro
 function labAnalyze(forceBaseline=false,manual=false,oneShotSimple=false){
  if(mode!=='rec'||!game||!stream){labUI('Finish board calibration and starting-position verification first.');return;}
  const p=labPhoto(640,true);if(!p){labUI('Cannot refine photo; check all four locked corners.');return;}
- st(2,'64 squares ✓','ok');const fp=labFingerprint(p,640),obs=labObs(p,!forceBaseline);if(labReference)labDraw('labPrevious',labReference.photo);labLastPhoto=p;labDraw('labCurrent',p);labRenderObs(obs);
- const cur=Logic.occFromChess(game),none=Logic.dist(cur,obs.occ);
- const observation=Array.from(obs.occ).join(''),now=performance.now();
+ const fp=labFingerprint(p,640),now=performance.now();
  const simpleMode=$('labSimpleMode').value;
  const simpleReady=!!labReference&&labFen===game.fen()&&!forceBaseline;
- const simpleStable=simpleReady&&simpleMode!=='off'?labSimpleStable(fp,now,manual):false;
- // Keep the ORIGINAL setup/calibration gate completely unchanged. Once a
- // reference exists, pixel-only mode may use its own photo-stability gate.
+ if(simpleReady&&(oneShotSimple||simpleMode==='only')){
+  // TRUE PIXEL ONLY: after the ORIGINAL first-board calibration is done,
+  // do not run the original occupancy, base/ghost or piece-colour tests.
+  // This is the same independent 2-photo path as the standalone detector.
+  st(2,'64 squares ✓','ok');
+  labLastPhoto=p;
+  labDraw('labPrevious',labReference.photo);labDraw('labCurrent',p);
+  if(!manual&&!labSimpleStable(fp,now,false)){
+   labUI('Pixel only: waiting for the camera photo to stabilize.');return;
+  }
+  labTrySimple(p,fp,now,manual,true);
+  return;
+ }
+ const obs=labObs(p,!forceBaseline);if(labReference)labDraw('labPrevious',labReference.photo);labLastPhoto=p;labDraw('labCurrent',p);labRenderObs(obs);
+ const cur=Logic.occFromChess(game),none=Logic.dist(cur,obs.occ);
+ const observation=Array.from(obs.occ).join('');
+ const simpleStable=simpleReady&&simpleMode==='fallback'?labSimpleStable(fp,now,manual):false;
+ // The original starting-position calibration and occupancy gate are unchanged.
  if(!manual&&observation!==labLastObservation){
   labLastObservation=observation;labObservationSince=now;labVerify=null;labPending=null;$('labCandidates').replaceChildren();
-  if(simpleReady&&simpleMode==='only'){
-   if(simpleStable)labTrySimple(p,fp,now,false,true);
-   else labUI('Pixel-only: waiting for the photograph to become stable.');
-  }else labUI('Board change detected · waiting for a stable photo.');
-  return;
+  labUI('Board change detected · waiting for a stable photo.');return;
  }
- if(!manual&&simpleReady&&simpleMode==='only'&&!simpleStable){labUI('Pixel-only: waiting for a stable photo.');return;}
- if(!manual&&now-labObservationSince<Math.max(300,Number($('labDelay').value)||500)&&!(simpleReady&&simpleMode==='only')){
-  // Original occupancy gets its full stability delay before fallback.
-  return;
- }
+ if(!manual&&now-labObservationSince<Math.max(300,Number($('labDelay').value)||500))return;
  if(forceBaseline||!labReference||labFen!==game.fen()){
   if(labUndoRestore?.fen===game.fen()){
    if(none!==0){st(3,none+' mismatches','bad');st(4,'paused after undo');labUI('Restore the undone move on the physical board. '+none+' square(s) disagree; recording is paused.');return;}
@@ -2185,12 +2212,7 @@ function labAnalyze(forceBaseline=false,manual=false,oneShotSimple=false){
   labAcceptPhoto(p,fp);if(!labAlbumCurrent){labAlbumStart();labAlbumCapture(p,{index:0,label:'starting_position'});}obs.colors=labColorRead(p,obs.occ,labReference.colorModel);labRenderObs(obs);st(3,none===0?'position verified ✓':'confirmed by user','ok');st(4,'recording – play!','ok');prog(1);$('modelStatus').textContent='Photo occupancy: ready';msg('READY – play one move at a time.');readySnd();spk('Board ready. Start playing.');labUI('Reference photo captured. Play one move, then remove your hands.');return;
  }
  if(game.game_over())return;
- // One-shot button is independent of the selected mode. Pixel-only also
- // bypasses ALL original move-decision branches after calibration.
- if(oneShotSimple||simpleMode==='only'){
-  labTrySimple(p,fp,now,manual,true);
-  return;
- }
+ // Pixel-only decisions already ran above, independently of this branch.
  const ranked=Logic.rankMoves(game,obs.occ);if(!ranked.length)return;
  if(none===0){
   if(simpleMode==='fallback'&&(manual||simpleStable)&&labTrySimple(p,fp,now,manual))return;
