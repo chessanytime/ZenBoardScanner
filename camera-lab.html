@@ -27,6 +27,17 @@ details.panel{padding:0}details>summary{padding:15px 16px;cursor:pointer;list-st
 <section class="panel camera-panel"><div class="panel-top"><h2>Board camera</h2><span class="tag">LIVE VIEW</span></div>
 <div class="row" style="margin:0 0 12px;align-items:center"><label for="labPixelTest" style="display:flex;align-items:center;gap:8px;font-weight:700"><input type="checkbox" id="labPixelTest" checked style="min-height:0;width:18px;height:18px;accent-color:var(--ac)"> Pixel Test (captures only)</label><span id="labPixelState" class="tag">ON</span></div>
 <p id="labPixelStatus" class="help" style="margin:0 0 12px">Waiting for a possible capture.</p>
+<div class="row" style="margin:0 0 10px;align-items:end">
+ <label class="field" for="labSimpleMode" style="flex:1 1 200px">Simple-move pixel detector
+  <select id="labSimpleMode" class="camera-select" style="width:100%">
+   <option value="off">1. OFF — original Camera Lab</option>
+   <option value="fallback" selected>2. FALLBACK — when original is uncertain</option>
+   <option value="only">3. PIXEL ONLY — simple moves</option>
+  </select>
+ </label>
+ <button id="labSimpleNow" type="button" style="flex:0 1 200px">Detect simple move now</button>
+</div>
+<p id="labSimpleStatus" class="help" role="status" style="margin:0 0 12px">Simple detector: fallback enabled. Requires a confirmed starting/reference photo.</p>
 <div id="stage"><video id="v" playsinline muted autoplay></video><canvas id="ov"></canvas></div>
 <div id="msg" role="status" aria-live="polite">Arrange the 32 pieces, select camera orientation, and start camera with all four board corners visible.</div><div id="barw"><div id="bar"></div></div><small id="modelStatus">Photo occupancy: waiting for board lock</small>
 <div class="row"><label class="field">Board orientation<select id="viewSide" class="camera-select" aria-label="Camera board orientation"><option value="0">Camera: White side</option><option value="1">Camera: right side</option><option value="2">Camera: Black side</option><option value="3">Camera: left side</option></select></label></div><div class="mode-picker"><div class="mode-title">Move detection mode</div><div class="mode-options" role="radiogroup" aria-label="Move detection mode"><label><input type="radio" name="labModeChoice" value="auto" id="labAuto" checked><span><strong>Automatic</strong><small>Play on the board; moves detected automatically</small></span></label><label><input type="radio" name="labModeChoice" value="manual" id="labManual"><span><strong>Manual capture</strong><small>Tap the button after each move</small></span></label></div><p class="help" id="labModeHelp">Automatic mode: the scanner captures stable board photos and records legal moves.</p></div><div class="primary-actions"><button class="p" id="b1">Start camera</button><button id="b2">Auto-detect board</button><button id="b3">Lock border</button></div></section>
@@ -1560,6 +1571,154 @@ function labPixelCapture(candidates,before,after,mover){
  return {move:clear?best.m:null,details,reason:clear?'Preferred '+best.m.to+' (fewest '+(mover==='w'?'black':'white')+' pixels).':'Pixel result uncertain; rescan or confirm a legal capture.'};
 }
 function labPixelStatus(text){$('labPixelStatus').textContent=text;}
+
+/* Simple move fallback, ported from zen_chess_move_detector_fixed.html.
+   Photo 1 is the LAST CONFIRMED 640x640 flattened board; Photo 2 is the
+   latest flattened photo. This is deliberately independent of the
+   classical-grid occupancy classifier and the learned piece-colour model.
+   It is never used for captures, en passant, castling or promotions.
+   No initial-board detection, calibration or setup logic is changed. */
+const labSimpleEngine = (() => {
+ const N=640,C=80,cells=[];
+ for(let r=0;r<8;r++)for(let c=0;c<8;c++)cells.push({r,c,sq:Logic.sqName(Logic.cellToSq(r,c,'bottom'))});
+ const median=a=>{const b=a.slice().sort((x,y)=>x-y);return b[Math.floor(b.length/2)]||0;};
+ function background(data){
+  const groups=[[],[]];
+  for(const {r,c} of cells){
+   let sr=0,sg=0,sb=0,l=0,l2=0,n=0;
+   for(let y=16;y<64;y+=3)for(let x=16;x<64;x+=3){
+    const k=((r*C+y)*N+c*C+x)*4,R=data[k],G=data[k+1],B=data[k+2],v=.299*R+.587*G+.114*B;
+    sr+=R;sg+=G;sb+=B;l+=v;l2+=v*v;n++;
+   }
+   groups[(r+c)&1].push({variance:Math.sqrt(Math.max(0,l2/n-(l/n)**2)),rgb:[sr/n,sg/n,sb/n]});
+  }
+  return groups.map(g=>{
+   const clean=g.sort((a,b)=>a.variance-b.variance).slice(0,10);
+   return [0,1,2].map(ch=>median(clean.map(x=>x.rgb[ch])));
+  });
+ }
+ function capture(a,b){
+  if(!a||!b||a.length!==N*N*4||b.length!==N*N*4)return null;
+  const ba=background(a),bb=background(b),scores=[];
+  for(const {r,c,sq} of cells){
+   const refA=ba[(r+c)&1],refB=bb[(r+c)&1];
+   let fgA=0,fgB=0,n=0,pixel=0,lA=0,lB=0,l2A=0,l2B=0,edgeA=0,edgeB=0;
+   for(let y=16;y<64;y+=2)for(let x=16;x<64;x+=2){
+    const k=((r*C+y)*N+c*C+x)*4;
+    const ar=a[k],ag=a[k+1],ab=a[k+2],br=b[k],bg=b[k+1],bl=b[k+2];
+    if(Math.hypot(ar-refA[0],ag-refA[1],ab-refA[2])>32)fgA++;
+    if(Math.hypot(br-refB[0],bg-refB[1],bl-refB[2])>32)fgB++;
+    const va=.299*ar+.587*ag+.114*ab,vb=.299*br+.587*bg+.114*bl;
+    lA+=va;lB+=vb;l2A+=va*va;l2B+=vb*vb;
+    if(x<62){const j=k+8;edgeA+=Math.abs(va-(.299*a[j]+.587*a[j+1]+.114*a[j+2]));edgeB+=Math.abs(vb-(.299*b[j]+.587*b[j+1]+.114*b[j+2]));}
+    const diff=(Math.abs((br-refB[0])-(ar-refA[0]))+Math.abs((bg-refB[1])-(ag-refA[1]))+Math.abs((bl-refB[2])-(ab-refA[2])))/3;
+    pixel+=Math.min(150,diff);n++;
+   }
+   const before=fgA/n,after=fgB/n;
+   const texA=Math.sqrt(Math.max(0,l2A/n-(lA/n)**2)),texB=Math.sqrt(Math.max(0,l2B/n-(lB/n)**2));
+   const strengthA=before+Math.max(0,texA-5)*.012+Math.max(0,edgeA/n-1)*.010;
+   const strengthB=after+Math.max(0,texB-5)*.012+Math.max(0,edgeB/n-1)*.010;
+   scores.push({sq,before,after,strengthA,strengthB,delta:strengthB-strengthA,pixel:pixel/n});
+  }
+  const noise=median(scores.map(x=>x.pixel)),threshold=Math.max(9,noise*2.4+2);
+  for(const s of scores){
+   const evidence=Math.max(0,s.pixel-threshold),neg=Math.max(0,-s.delta),pos=Math.max(0,s.delta);
+   s.fromScore=neg*95+evidence*.65;s.toScore=pos*95+evidence*.65;
+   s.sourceOK=s.strengthA>=.16&&neg>=.12&&s.pixel>=threshold;
+   s.destOK=s.strengthB>=.16&&pos>=.12&&s.pixel>=threshold;
+  }
+  return {scores,noise,threshold,bySquare:Object.fromEntries(scores.map(s=>[s.sq,s]))};
+ }
+ function evaluate(before,after,chess){
+  const sample=capture(before,after);
+  if(!sample)return {move:null,clear:false,options:[],reason:'Missing or invalid 640×640 board photos.'};
+  const board=chess.board(),current=Logic.occFromChess(chess),turn=chess.turn();
+  const sourcePool=sample.scores.filter(s=>{
+   const idx=Logic.sqIndex(s.sq),p=board[7-(idx>>3)][idx&7];
+   return p&&p.color===turn&&s.sourceOK;
+  }).sort((a,b)=>b.fromScore-a.fromScore);
+  const destPool=sample.scores.filter(s=>!current[Logic.sqIndex(s.sq)]&&s.destOK).sort((a,b)=>b.toScore-a.toScore);
+  const legal=chess.moves({verbose:true}).filter(m=>
+    !m.captured&&!m.promotion&&!m.flags.includes('e')&&!m.flags.includes('k')&&!m.flags.includes('q')&&
+    current[Logic.sqIndex(m.from)]&&!current[Logic.sqIndex(m.to)]
+  );
+  const options=[];
+  for(const m of legal){
+   const from=sample.bySquare[m.from],to=sample.bySquare[m.to];
+   if(!from?.sourceOK||!to?.destOK)continue;
+   options.push({m,from,to,score:from.fromScore+to.toScore});
+  }
+  options.sort((a,b)=>b.score-a.score);
+  const best=options[0],runner=options[1];
+  if(!best)return {move:null,clear:false,options:[],sample,sourcePool,destPool,
+   reason:'No legal quiet move has both an emptied source and a newly occupied destination.'};
+  const sourceUnique=sourcePool[0]?.sq===best.m.from&&(!sourcePool[1]||sourcePool[0].fromScore>=sourcePool[1].fromScore*1.33);
+  const destUnique=destPool[0]?.sq===best.m.to&&(!destPool[1]||destPool[0].toScore>=destPool[1].toScore*1.33);
+  const legalUnique=!runner||best.score>=runner.score*1.25;
+  const clear=!!(sourceUnique&&destUnique&&legalUnique);
+  return {move:clear?best.m:null,clear,options,sourcePool,destPool,sample,
+    reason:clear?'Source became empty and destination became occupied.':
+      'More than one source/destination is plausible; manual confirmation needed.'};
+ }
+ return {evaluate};
+})();
+let labSimpleState={reference:null,fp:null,since:0,verify:null};
+function labSimpleStatus(text){$('labSimpleStatus').textContent=text;}
+function labSimpleStable(fp,now,manual){
+ if(labSimpleState.reference!==labReference){
+  labSimpleState={reference:labReference,fp:null,since:0,verify:null};
+ }
+ if(manual)return true;
+ if(!labSimpleState.fp||labDifference(labSimpleState.fp,fp)>3.1){
+  labSimpleState.fp=new Float32Array(fp);labSimpleState.since=now;labSimpleState.verify=null;
+  return false;
+ }
+ return now-labSimpleState.since>=Math.max(300,Number($('labDelay').value)||500);
+}
+function labTrySimple(photo,fp,now,manual,only=false){
+ if(!labReference||labFen!==game.fen()){
+  labSimpleStatus('Simple detector: first confirm the board reference photograph.');return false;
+ }
+ const result=labSimpleEngine.evaluate(labReference.photo,photo,game);
+ const src=result.sourcePool||[],dst=result.destPool||[];
+ const detail='Empty candidates: '+(src.length?src.slice(0,3).map(x=>x.sq).join(', '):'none')+
+  ' · Occupied candidates: '+(dst.length?dst.slice(0,3).map(x=>x.sq).join(', '):'none')+
+  (result.sample?' · threshold '+result.sample.threshold.toFixed(1):'');
+ labSimpleStatus('Simple detector: '+result.reason+' '+detail);
+ if(result.move){
+  const m=result.move,key=game.fen()+'|'+m.from+m.to;
+  if(!manual){
+   if(!labSimpleState.verify||labSimpleState.verify.key!==key){
+    labSimpleState.verify={key,since:now,reference:labReference};
+    labUI('Simple Pixel: '+m.from+' → '+m.to+'; confirming on the next stable photo…');return true;
+   }
+   if(now-labSimpleState.verify.since<300)return true;
+  }
+  labCommit(m,photo,fp);
+  labSimpleState.verify=null;
+  labSimpleStatus('Simple detector RECORDED: '+m.san+' ('+m.from+' → '+m.to+').');
+  labUI('Recorded '+m.san+' using simple-move pixel logic.');
+  return true;
+ }
+ labSimpleState.verify=null;
+ if(only){
+  labUI('Simple detector: '+result.reason);
+  const buttons=$('labCandidates');buttons.replaceChildren();
+  // Only display legal normal moves supported by BOTH pixel transitions.
+  for(const candidate of result.options.slice(0,5)){
+   const m=candidate.m,b=document.createElement('button');
+   b.textContent='Confirm '+m.san+' ('+m.from+' → '+m.to+')';
+   b.onclick=()=>{if(labReference&&labFen===game.fen())labCommit(m,photo,fp);};
+   buttons.append(b);
+  }
+  if(result.options.length){
+   const h=document.createElement('small');h.textContent='Pixel test uncertain. Select the actual move, or rescan.';buttons.append(h);
+  }
+  return true;
+ }
+ return false;
+}
+
 function labColorCapture(ties,colors,chess,model){
  // Only break exact binary ties between ordinary captures from the same origin.
  // Promotion, castling, en passant and noisy occupancy keep the previous logic.
@@ -1660,14 +1819,31 @@ function labObs(p,allowBase=true){const threshold=Math.max(.1,Math.min(2,Number(
 function labRenderObs(obs){const dst=$('labGrid'),expected=Logic.occFromChess(game);dst.replaceChildren();for(let r=0;r<8;r++)for(let c=0;c<8;c++){const q=r*8+c,i=Logic.cellToSq(r,c,'bottom'),el=document.createElement('div'),color=obs.colors.states[i],ghost=obs.suppressed.includes(i),name=ghost?(obs.base.owner[i]>=0?'Height projection; base on '+Logic.sqName(obs.base.owner[i]):'Unchanged false occupancy on previously confirmed empty square'):color==='w'?'White':color==='b'?'Black':color==='?'?'Color uncertain':'Empty';el.textContent=Logic.sqName(i)+(ghost?' G':color==='0'?'':' '+(color==='?'?'?':color.toUpperCase()));el.title=name+' · occupancy score '+obs.scores[q].toFixed(2);el.style.cssText='padding:5px 0;text-align:center;font-size:10px;border-radius:3px;background:'+(ghost?'#705923':color==='w'?'#e9e8da':color==='b'?'#10141c':color==='?'?'#247e63':'#273345')+';color:'+(color==='w'?'#111822':'#fff')+';border:1px solid '+(obs.occ[i]!==expected[i]?'#ff777e':'transparent');dst.append(el);}}
 function labAcceptPhoto(photo,fp){labVerify=null;const colorModel=labColorLearn(photo,game),threshold=Math.max(.1,Math.min(2,Number($('labThreshold').value)||.5)),raw=Logic.gridToOcc(Logic.classicalGrid(photo,640,threshold).grid,'bottom');labReference={photo,fp,colorModel,raw,base:labBaseScan(photo,colorModel,rot,Logic.occFromChess(game))};labLastObservation=null;labObservationSince=0;labFen=game.fen();labLastFrame=fp;labStableAt=0;labMotion=false;labPending=null;$('labCandidates').replaceChildren();labDraw('labPrevious',photo);}
 function labCommit(m,photo,fp){const old=game.fen(),played=game.move({from:m.from,to:m.to,promotion:m.promotion||'q'});if(!played){labUI('Move no longer legal. Recheck the board.');return;}physicalMoveLog.push({label:played.san,fen:game.fen(),previousFen:old,illegal:false});showMoves();drawPos(null);const previous=labReference?.photo;labAcceptPhoto(photo,fp);if(previous)labDraw('labPrevious',previous);labRenderObs(labObs(photo));labUI('Recorded '+played.san+' · waiting for next move.');msg('Photo move: '+played.san);sayMove(played);if(game.game_over())labUI('Game finished. Export PGN.');}
-function labAnalyze(forceBaseline=false,manual=false){
+function labAnalyze(forceBaseline=false,manual=false,oneShotSimple=false){
  if(mode!=='rec'||!game||!stream){labUI('Finish board calibration and starting-position verification first.');return;}
  const p=labPhoto(640,true);if(!p){labUI('Cannot refine photo; check all four locked corners.');return;}
  st(2,'64 squares ✓','ok');const fp=labFingerprint(p,640),obs=labObs(p,!forceBaseline);if(labReference)labDraw('labPrevious',labReference.photo);labLastPhoto=p;labDraw('labCurrent',p);labRenderObs(obs);
  const cur=Logic.occFromChess(game),none=Logic.dist(cur,obs.occ);
  const observation=Array.from(obs.occ).join(''),now=performance.now();
- if(!manual&&observation!==labLastObservation){labLastObservation=observation;labObservationSince=now;labVerify=null;labPending=null;$('labCandidates').replaceChildren();labUI('Board change detected · waiting for a stable photo.');return;}
- if(!manual&&now-labObservationSince<Math.max(300,Number($('labDelay').value)||500))return;
+ const simpleMode=$('labSimpleMode').value;
+ const simpleReady=!!labReference&&labFen===game.fen()&&!forceBaseline;
+ const simpleStable=simpleReady&&simpleMode!=='off'?labSimpleStable(fp,now,manual):false;
+ // Keep the ORIGINAL setup/calibration gate completely unchanged. Once a
+ // reference exists, pixel-only mode may use its own photo-stability gate.
+ if(!manual&&observation!==labLastObservation){
+  labLastObservation=observation;labObservationSince=now;labVerify=null;labPending=null;$('labCandidates').replaceChildren();
+  if(simpleReady&&simpleMode==='only'){
+   if(simpleStable)labTrySimple(p,fp,now,false,true);
+   else labUI('Pixel-only: waiting for the photograph to become stable.');
+  }else if(simpleReady&&simpleMode==='fallback'&&simpleStable&&labTrySimple(p,fp,now,false))return;
+  else labUI('Board change detected · waiting for a stable photo.');
+  return;
+ }
+ if(!manual&&simpleReady&&simpleMode==='only'&&!simpleStable){labUI('Pixel-only: waiting for a stable photo.');return;}
+ if(!manual&&now-labObservationSince<Math.max(300,Number($('labDelay').value)||500)&&!(simpleReady&&simpleMode==='only')){
+  if(simpleReady&&simpleMode==='fallback'&&simpleStable)labTrySimple(p,fp,now,false);
+  return;
+ }
  if(forceBaseline||!labReference||labFen!==game.fen()){
   if(labUndoRestore?.fen===game.fen()){
    if(none!==0){st(3,none+' mismatches','bad');st(4,'paused after undo');labUI('Restore the undone move on the physical board. '+none+' square(s) disagree; recording is paused.');return;}
@@ -1682,8 +1858,17 @@ function labAnalyze(forceBaseline=false,manual=false){
   labAcceptPhoto(p,fp);obs.colors=labColorRead(p,obs.occ,labReference.colorModel);labRenderObs(obs);st(3,none===0?'position verified ✓':'confirmed by user','ok');st(4,'recording – play!','ok');prog(1);$('modelStatus').textContent='Photo occupancy: ready';msg('READY – play one move at a time.');readySnd();spk('Board ready. Start playing.');labUI('Reference photo captured. Play one move, then remove your hands.');return;
  }
  if(game.game_over())return;
+ // One-shot button is independent of the selected mode. Pixel-only also
+ // bypasses ALL original move-decision branches after calibration.
+ if(oneShotSimple||simpleMode==='only'){
+  labTrySimple(p,fp,now,manual,true);
+  return;
+ }
  const ranked=Logic.rankMoves(game,obs.occ);if(!ranked.length)return;
- if(none===0){labVerify=null;labPending=null;$('labCandidates').replaceChildren();labUI('No occupancy change detected. Waiting for a move.');return;}
+ if(none===0){
+  if(simpleMode==='fallback'&&(manual||simpleStable)&&labTrySimple(p,fp,now,manual))return;
+  labVerify=null;labPending=null;$('labCandidates').replaceChildren();labUI('No occupancy change detected. Waiting for a move.');return;
+ }
  const best=ranked[0],ties=ranked.filter(x=>x.d===best.d);
  // Run the optional pixel tracker before either the single-legal-move or
  // multiple-capture branches, and only for the exact ordinary-capture pattern.
@@ -1716,6 +1901,10 @@ function labAnalyze(forceBaseline=false,manual=false){
   if(labVerify?.colorKey!==key)labVerify={colorKey:key,since:now};
   labPending=null;$('labCandidates').replaceChildren();labUI('Checking capture color change: '+colorMove.san+'…');return;
  }
+ // When the original detector has no unique reliable result, use the
+ // independent piece-texture / pixel-occupancy fallback. Captures keep
+ // their separate Pixel Test and do not enter the quiet-move fallback.
+ if(simpleMode==='fallback'&&!pixelCandidates.length&&(manual||simpleStable)&&labTrySimple(p,fp,now,manual))return;
  labVerify=null;
  if(best.d>=none&&!manual){labPending=null;$('labCandidates').replaceChildren();labUI('Unclear photo; automatically checking again.');return;}
  if(!manual&&best.d>0&&now-labObservationSince<1600){labUI('Some squares disagree · automatically checking again.');return;}
@@ -1746,6 +1935,21 @@ function labModeChanged(){
  if(mode==='rec'&&!labReference)msg(auto?'Waiting for automatic starting-position photo.':'Board locked. Tap Capture & Analyze now to capture the starting position.');
 }
 $('labAuto').onchange=labModeChanged;$('labManual').onchange=labModeChanged;
+$('labSimpleMode').onchange=()=>{
+ labSimpleState={reference:null,fp:null,since:0,verify:null};
+ $('labCandidates').replaceChildren();
+ const x=$('labSimpleMode').value;
+ labSimpleStatus(x==='off'?'Simple detector OFF: Camera Lab original logic only.':
+   x==='fallback'?'Simple detector FALLBACK: runs only if original recognition is uncertain.':
+   'Simple detector PIXEL ONLY: quiet moves only, after original board calibration.');
+};
+$('labSimpleNow').onclick=()=>{
+ if(mode!=='rec'||!game||!labReference||labFen!==game.fen()){
+  labSimpleStatus('Please complete original board calibration and confirm a reference photo first.');return;
+ }
+ // One-shot probe: does not change the current 3-way selector or reset setup.
+ labAnalyze(false,true,true);
+};
 $('labPixelTest').onchange=()=>{
  const on=$('labPixelTest').checked;
  $('labPixelState').textContent=on?'ON':'OFF';
