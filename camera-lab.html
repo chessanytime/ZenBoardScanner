@@ -40,7 +40,12 @@ details.panel{padding:0}details>summary{padding:15px 16px;cursor:pointer;list-st
 <p id="labSimpleStatus" class="help" role="status" style="margin:0 0 12px">Simple detector: fallback enabled. Requires a confirmed starting/reference photo.</p>
 <div id="stage"><video id="v" playsinline muted autoplay></video><canvas id="ov"></canvas></div>
 <div id="msg" role="status" aria-live="polite">Arrange the 32 pieces, select camera orientation, and start camera with all four board corners visible.</div><div id="barw"><div id="bar"></div></div><small id="modelStatus">Photo occupancy: waiting for board lock</small>
-<div class="row"><label class="field">Board orientation<select id="viewSide" class="camera-select" aria-label="Camera board orientation"><option value="0">Camera: White side</option><option value="1">Camera: right side</option><option value="2">Camera: Black side</option><option value="3">Camera: left side</option></select></label></div><div class="mode-picker"><div class="mode-title">Move detection mode</div><div class="mode-options" role="radiogroup" aria-label="Move detection mode"><label><input type="radio" name="labModeChoice" value="auto" id="labAuto" checked><span><strong>Automatic</strong><small>Play on the board; moves detected automatically</small></span></label><label><input type="radio" name="labModeChoice" value="manual" id="labManual"><span><strong>Manual capture</strong><small>Tap the button after each move</small></span></label></div><p class="help" id="labModeHelp">Automatic mode: the scanner captures stable board photos and records legal moves.</p></div><div class="primary-actions"><button class="p" id="b1">Start camera</button><button id="b2">Auto-detect board</button><button id="b3">Lock border</button></div></section>
+<div class="row"><label class="field">Board orientation<select id="viewSide" class="camera-select" aria-label="Camera board orientation"><option value="0">Camera: White side</option><option value="1">Camera: right side</option><option value="2">Camera: Black side</option><option value="3">Camera: left side</option></select></label></div><div class="mode-picker"><div class="mode-title">Move detection mode</div><div class="mode-options" role="radiogroup" aria-label="Move detection mode"><label><input type="radio" name="labModeChoice" value="auto" id="labAuto" checked><span><strong>Automatic</strong><small>Play on the board; moves detected automatically</small></span></label><label><input type="radio" name="labModeChoice" value="manual" id="labManual"><span><strong>Manual capture</strong><small>Tap the button after each move</small></span></label></div><p class="help" id="labModeHelp">Automatic mode: the scanner captures stable board photos and records legal moves.</p></div><div class="primary-actions"><button class="p" id="b1">Start camera</button><button id="b2">Auto-detect board</button><button id="b3">Lock border</button></div>
+<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:13px">
+ <div class="row" style="align-items:center;justify-content:space-between;margin:0"><strong style="font-size:13px">Video recording</strong><span class="tag">NORMAL QUALITY · CAMERA VIDEO</span></div>
+ <div class="actions" style="margin-top:9px"><button id="videoStart" type="button">● Start video</button><button id="videoStop" type="button" disabled>■ Stop &amp; Save</button><button id="videoRecover" type="button" disabled>Save previous video</button></div>
+ <p id="videoStatus" role="status" class="help">Start camera, then start video recording. Stop &amp; Save downloads the video. If a tab closes unexpectedly, reopen to recover saved video chunks.</p>
+</div></section>
 <section class="panel steps-panel"><h2>Setup progress</h2><ol class="steps"><li>Detect board border <b id="s1">waiting</b></li><li>Refine board photo <b id="s2">waiting</b></li><li>Verify starting position <b id="s3">waiting</b></li><li>Record moves <b id="s4">waiting</b></li></ol></section>
 <details class="panel setup-panel"><summary>Camera &amp; recording settings</summary><div class="detail-body"><div class="row"><label class="field">Camera device<select id="cameraSelect" class="camera-select" aria-label="Choose smartphone camera"><option value="">Camera: auto (rear)</option></select></label></div><div class="actions"><button id="b8">Switch camera</button><button id="flashBtn" disabled>Flash: unavailable</button><button id="b9">Sound: on</button><button id="b11">Announce moves: on</button></div><p class="help">Mount the camera above the board. Keep all corners visible. Drag the corner handles if detection is incorrect, then lock the border. Recalibrate after moving the camera.</p></div></details>
 <details class="panel diagnostics-panel"><summary>Detection diagnostics</summary><div class="detail-body"><div class="actions"><button id="b15">Yellow diagnostics: off</button><button id="cvToggle">OpenCV: loading…</button></div><div class="cv" style="margin-top:12px"><figure><figcaption>Detected position</figcaption><canvas class="sq" id="pos" width="240" height="240"></canvas></figure><figure><figcaption>Flattened board</figcaption><canvas class="sq" id="flat" width="320" height="320"></canvas></figure></div><p class="help">Red: expected piece missing. Orange: unexpected piece.</p></div></details>
@@ -1050,9 +1055,158 @@ function updateFlash(){const track=stream?.getVideoTracks()[0];let supported=fal
  try{supported=!!track?.getCapabilities?.().torch}catch(e){}
  torchOn=false;flashBtn.disabled=!supported;flashBtn.textContent=supported?'Flash: off':'Flash: unavailable';
 }
+
+/* Independent camera-stream video recording (~1.6 Mb/s, 720p ideal).
+   Record 2-second blobs and persist them to IndexedDB. Browsers cannot
+   reliably auto-download during tab closure, so restore on next opening. */
+const videoDBName='zen-camera-lab-video-v1';
+let videoDBPromise=null,videoSession=null;
+function videoText(s){$('videoStatus').textContent=s;}
+function videoDB(){
+ if(!('indexedDB' in window))return Promise.reject(new Error('Local storage unavailable'));
+ if(!videoDBPromise)videoDBPromise=new Promise((resolve,reject)=>{
+  const r=indexedDB.open(videoDBName,1);
+  r.onupgradeneeded=()=>{
+   const db=r.result;
+   if(!db.objectStoreNames.contains('sessions'))db.createObjectStore('sessions',{keyPath:'id'});
+   if(!db.objectStoreNames.contains('chunks')){
+    const store=db.createObjectStore('chunks',{keyPath:'key'});
+    store.createIndex('session','session',{unique:false});
+   }
+  };
+  r.onsuccess=()=>resolve(r.result);
+  r.onerror=()=>reject(r.error||new Error('Video storage unavailable'));
+ }).catch(err=>{videoDBPromise=null;throw err});
+ return videoDBPromise;
+}
+async function videoPut(store,value){
+ const db=await videoDB();
+ return new Promise((resolve,reject)=>{
+  const tx=db.transaction(store,'readwrite');
+  tx.objectStore(store).put(value);
+  tx.oncomplete=resolve;
+  tx.onerror=()=>reject(tx.error||new Error('Video storage write failed'));
+  tx.onabort=()=>reject(tx.error||new Error('Video storage interrupted'));
+ });
+}
+async function videoFindLast(){
+ const db=await videoDB();
+ return new Promise((resolve,reject)=>{
+  const r=db.transaction('sessions','readonly').objectStore('sessions').getAll();
+  r.onsuccess=()=>resolve((r.result||[]).sort((a,b)=>b.started-a.started)[0]||null);
+  r.onerror=()=>reject(r.error);
+ });
+}
+async function videoRead(id){
+ const db=await videoDB();
+ return new Promise((resolve,reject)=>{
+  const r=db.transaction('chunks','readonly').objectStore('chunks').index('session').getAll(id);
+  r.onsuccess=()=>resolve((r.result||[]).sort((a,b)=>a.index-b.index).map(x=>x.blob));
+  r.onerror=()=>reject(r.error);
+ });
+}
+function videoFile(mime,started){
+ return 'Zen-Camera-'+new Date(started).toISOString().replace(/[:.]/g,'-')+(mime.includes('mp4')?'.mp4':'.webm');
+}
+function videoSave(blob,file){
+ if(!blob?.size)throw new Error('No video data');
+ const url=URL.createObjectURL(blob),a=document.createElement('a');
+ a.href=url;a.download=file;document.body.appendChild(a);a.click();a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+function videoButtons(){
+ const running=videoSession?.recorder?.state==='recording';
+ $('videoStart').disabled=!!running||!stream||!stream.active;
+ $('videoStop').disabled=!running;
+ $('videoStart').textContent=running?'● Recording…':'● Start video';
+}
+async function videoRefresh(){
+ try{
+  const meta=await videoFindLast();
+  $('videoRecover').disabled=!meta||(await videoRead(meta.id)).length===0;
+ }catch(e){$('videoRecover').disabled=true;}
+}
+async function videoRecover(){
+ $('videoRecover').disabled=true;
+ try{
+  const meta=await videoFindLast();
+  if(!meta)throw new Error('No previous recording');
+  const chunks=await videoRead(meta.id);
+  if(!chunks.length)throw new Error('No stored video chunks');
+  videoSave(new Blob(chunks,{type:meta.mime}),videoFile(meta.mime,meta.started));
+  videoText('Previous recording saved ('+chunks.length+' segments). If the tab closed unexpectedly, the final seconds may be missing.');
+ }catch(e){videoText('Recovery failed: '+e.message);}
+ finally{videoRefresh();}
+}
+async function videoStart(){
+ if(!stream||!stream.active){videoText('Start the camera first.');return;}
+ if(videoSession?.recorder?.state==='recording')return;
+ if(!window.MediaRecorder){videoText('This browser does not support video recording.');return;}
+ const formats=['video/webm;codecs=vp8','video/webm','video/mp4'];
+ const mime=formats.find(x=>MediaRecorder.isTypeSupported(x))||'';
+ const started=Date.now(),id=started+'-'+Math.random().toString(36).slice(2,9);
+ let stored=true;
+ try{await videoPut('sessions',{id,started,mime:mime||'video/webm',state:'recording'});}
+ catch(e){stored=false;}
+ let recorder;
+ try{recorder=new MediaRecorder(stream,mime?{mimeType:mime,videoBitsPerSecond:1600000}:{videoBitsPerSecond:1600000});}
+ catch(e){videoText('Could not start recording: '+e.message);return;}
+ const session={id,started,mime:recorder.mimeType||mime||'video/webm',recorder,chunks:[],write:Promise.resolve(),stored,index:0,stopPromise:null};
+ videoSession=session;
+ recorder.ondataavailable=e=>{
+  if(!e.data?.size)return;
+  const index=session.index++;
+  session.chunks.push(e.data);
+  if(session.stored){
+   session.write=session.write.then(()=>videoPut('chunks',{key:id+'-'+String(index).padStart(7,'0'),session:id,index,blob:e.data}))
+   .catch(err=>{session.stored=false;videoText('Recording active, but backup storage failed: '+err.message);});
+  }
+ };
+ recorder.onerror=e=>videoText('Video recording error: '+(e.error?.message||'unknown error'));
+ recorder.onstop=async()=>{
+  await session.write;
+  if(session.stored)try{await videoPut('sessions',{id,started,mime:session.mime,state:'complete'});}catch(e){session.stored=false;}
+  const blob=new Blob(session.chunks,{type:session.mime});
+  try{
+   videoSave(blob,videoFile(session.mime,started));
+   videoText('Video stopped and saved ('+(blob.size/1048576).toFixed(1)+' MB).'+(session.stored?' Recovery copy retained.':''));
+  }catch(e){videoText('Video stopped. Download unavailable: '+e.message+'. Try Save previous video.');}
+  if(videoSession===session)videoSession=null;
+  videoButtons();videoRefresh();
+  session.resolveStop?.();
+ };
+ try{recorder.start(2000);videoText('● Recording camera video at normal quality.'+(stored?' Recovery copy stored automatically.':' Backup storage unavailable; stop to save.'));}
+ catch(e){videoSession=null;videoText('Video could not start: '+e.message);}
+ videoButtons();
+}
+function videoStop(){
+ const s=videoSession;
+ if(!s)return Promise.resolve();
+ if(s.stopPromise)return s.stopPromise;
+ s.stopPromise=new Promise(resolve=>s.resolveStop=resolve);
+ try{if(s.recorder.state!=='inactive')s.recorder.stop();else s.resolveStop();}
+ catch(e){videoText('Could not stop video: '+e.message);s.resolveStop();}
+ return s.stopPromise;
+}
+$('videoStart').onclick=videoStart;
+$('videoStop').onclick=videoStop;
+$('videoRecover').onclick=videoRecover;
+window.addEventListener('pagehide',()=>{
+ if(videoSession?.recorder?.state==='recording'){
+  try{videoSession.recorder.requestData();}catch(e){}
+  try{videoSession.recorder.stop();}catch(e){}
+ }
+});
+window.addEventListener('beforeunload',e=>{
+ if(videoSession?.recorder?.state==='recording'){e.preventDefault();e.returnValue='';}
+});
+videoRefresh();
+
 async function cam(){cancelPromotion();if(cameraBusy)return;cameraBusy=true;const oldStream=stream;
  try{if(window.speechSynthesis)speechSynthesis.speak(new SpeechSynthesisUtterance(''));
  ac=ac||new(window.AudioContext||window.webkitAudioContext)();await ac.resume();
+ // Save any active video before releasing the old camera track.
+ if(oldStream&&videoSession)await videoStop();
  // Stop the previous camera before opening another; some phones cannot stream two cameras.
  if(oldStream){oldStream.getTracks().forEach(t=>t.stop());stream=null;V.srcObject=null}
  const constraints={width:{ideal:1280},height:{ideal:720}};
@@ -1065,9 +1219,9 @@ async function cam(){cancelPromotion();if(cameraBusy)return;cameraBusy=true;cons
  quad=[[cx-side/2,cy-side/2],[cx+side/2,cy-side/2],[cx+side/2,cy+side/2],[cx-side/2,cy+side/2]];
  // Camera changes invalidate image calibration, but preserve already recorded moves.
  base=null;occModel=null;occModelReady=false;$('modelStatus').textContent='Photo occupancy: waiting for board lock';refF=null;prevF=null;thrQ=null;stable=0;rot=Number($('viewSide').value)||0;startSearch();
- await listCameras();updateFlash();
+ await listCameras();updateFlash();videoButtons();
  }catch(e){flashBtn.disabled=true;flashBtn.textContent='Flash: unavailable';msg('Camera error: '+e.message+'. Use HTTPS or localhost and allow camera permission.')}
- finally{cameraBusy=false}
+ finally{cameraBusy=false;videoButtons();}
 }
 cameraSelect.onchange=()=>{selectedCamera=cameraSelect.value;if(stream)cam()};
 flashBtn.onclick=async()=>{const track=stream?.getVideoTracks()[0];if(!track)return;
