@@ -105,6 +105,51 @@ header{margin:0 0 12px;padding:0 2px}
  .steps-panel .steps{grid-template-columns:1fr}
  .record-panel .cv figcaption{font-size:10px}
 }
+
+/* Compact layout correction: keep video+overlay at their natural ratio. */
+@media(min-width:1221px){
+ body{max-width:1460px;width:100%;margin-inline:auto;padding:14px 22px 26px}
+ .workspace{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+ .record-panel{order:-1} /* Comparison boards first, live processing below */
+ .camera-panel{padding:15px}
+ .record-panel{padding:15px}
+ #stage{min-height:0}
+ .camera-panel .mode-picker{margin-top:9px}
+ .panel-top{margin-bottom:9px}
+}
+.record-panel .cv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:start}
+.record-panel .cv figure{width:100%;max-width:100%;min-width:0;overflow:hidden}
+.record-panel .cv canvas.sq{
+ display:block;width:100%;height:auto;max-width:100%;aspect-ratio:1 / 1;
+ border-radius:9px;object-fit:contain
+}
+/* One occupancy label per true square. The rendered cells must be square,
+   regardless of how wide the right panel is. */
+.record-panel #labGrid{
+ display:grid!important;grid-template-columns:repeat(8,minmax(0,1fr))!important;
+ width:min(100%,520px);max-width:520px;margin:12px auto;
+ gap:2px
+}
+.record-panel #labGrid>div{
+ box-sizing:border-box;display:grid;place-items:center;
+ width:100%;height:auto;aspect-ratio:1 / 1;
+ min-height:0!important;padding:0!important;
+ font-size:clamp(9px,.78vw,12px)!important;line-height:1.1;
+ overflow:hidden;white-space:nowrap
+}
+@media(min-width:761px) and (max-width:1220px){
+ body{max-width:980px;margin-inline:auto;padding:14px 20px 26px}
+ .record-panel{order:1}
+ .pipeline-panel{order:2}
+ #stage{min-height:0}
+}
+@media(max-width:760px){
+ .record-panel{order:1}
+ .pipeline-panel{order:2}
+ .record-panel .cv{gap:7px}
+ .record-panel #labGrid{width:min(100%,480px)}
+ .record-panel #labGrid>div{font-size:clamp(8px,2.25vw,11px)!important}
+}
 </style></head><body>
 <header><div class="brandmark" aria-hidden="true">♞</div><div><div class="eyebrow">Zen Mind Chess Academy</div><h1>Camera Lab</h1><div class="subtitle">Experimental move detection · independent test page</div></div><span class="local">TEST LAB</span></header>
 <nav class="lab-nav"><a href="index.html">← Main scanner</a> <a href="combined-scanner.html">Combined Detection →</a></nav><main class="workspace">
