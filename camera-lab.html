@@ -42,9 +42,10 @@ details.panel{padding:0}details>summary{padding:15px 16px;cursor:pointer;list-st
 <div id="msg" role="status" aria-live="polite">Arrange the 32 pieces, select camera orientation, and start camera with all four board corners visible.</div><div id="barw"><div id="bar"></div></div><small id="modelStatus">Photo occupancy: waiting for board lock</small>
 <div class="row"><label class="field">Board orientation<select id="viewSide" class="camera-select" aria-label="Camera board orientation"><option value="0">Camera: White side</option><option value="1">Camera: right side</option><option value="2">Camera: Black side</option><option value="3">Camera: left side</option></select></label></div><div class="mode-picker"><div class="mode-title">Move detection mode</div><div class="mode-options" role="radiogroup" aria-label="Move detection mode"><label><input type="radio" name="labModeChoice" value="auto" id="labAuto" checked><span><strong>Automatic</strong><small>Play on the board; moves detected automatically</small></span></label><label><input type="radio" name="labModeChoice" value="manual" id="labManual"><span><strong>Manual capture</strong><small>Tap the button after each move</small></span></label></div><p class="help" id="labModeHelp">Automatic mode: the scanner captures stable board photos and records legal moves.</p></div><div class="primary-actions"><button class="p" id="b1">Start camera</button><button id="b2">Auto-detect board</button><button id="b3">Lock border</button></div>
 <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:13px">
- <div class="row" style="align-items:center;justify-content:space-between;margin:0"><strong style="font-size:13px">Video recording</strong><span class="tag">NORMAL QUALITY · CAMERA VIDEO</span></div>
- <div class="actions" style="margin-top:9px"><button id="videoStart" type="button">● Start video</button><button id="videoStop" type="button" disabled>■ Stop &amp; Save</button><button id="videoRecover" type="button" disabled>Save previous video</button></div>
- <p id="videoStatus" role="status" class="help">Start camera, then start video recording. Stop &amp; Save downloads the video. If a tab closes unexpectedly, reopen to recover saved video chunks.</p>
+ <div class="row" style="align-items:center;justify-content:space-between;margin:0"><strong style="font-size:13px">Processed board video</strong><span class="tag">HD · 1280×1280 · BOARD ONLY</span></div>
+ <div class="actions" style="margin-top:9px"><button id="videoStart" type="button">● Record HD board</button><button id="videoStop" type="button" disabled>■ Stop &amp; Save HD Video</button><button id="videoRecover" type="button" disabled>Save previous video</button><button id="videoHDPhoto" type="button">📷 Capture HD Board Photo</button></div>
+ <canvas id="videoBoardHD" width="1280" height="1280" style="display:none;width:200px;max-width:100%;aspect-ratio:1;border-radius:8px;margin:9px auto;border:1px solid var(--line)" aria-label="Processed chessboard preview"></canvas>
+ <p id="videoStatus" role="status" class="help">Lock the chessboard, then record only its straightened 1280×1280 HD view. Capture HD Board Photo saves a manual JPEG. Stop &amp; Save downloads your video; recover stored chunks if the page closes.</p>
 </div></section>
 <section class="panel steps-panel"><h2>Setup progress</h2><ol class="steps"><li>Detect board border <b id="s1">waiting</b></li><li>Refine board photo <b id="s2">waiting</b></li><li>Verify starting position <b id="s3">waiting</b></li><li>Record moves <b id="s4">waiting</b></li></ol></section>
 <details class="panel setup-panel"><summary>Camera &amp; recording settings</summary><div class="detail-body"><div class="row"><label class="field">Camera device<select id="cameraSelect" class="camera-select" aria-label="Choose smartphone camera"><option value="">Camera: auto (rear)</option></select></label></div><div class="actions"><button id="b8">Switch camera</button><button id="flashBtn" disabled>Flash: unavailable</button><button id="b9">Sound: on</button><button id="b11">Announce moves: on</button></div><p class="help">Mount the camera above the board. Keep all corners visible. Drag the corner handles if detection is incorrect, then lock the border. Recalibrate after moving the camera.</p></div></details>
@@ -183,7 +184,7 @@ for(let q=0;q<64;q++){for(let k=0;k<48;k++)A[q*K+k]=Math.min(255,F[q*K+k]*g);A[q
 function startSearch(m){mode=m||'search';found=0;lastQ=null;t0=Date.now();st(1,m=='manual'?'drag corners, then Lock':'searching…');st(2,'waiting');st(3,'waiting');st(4,'waiting');prog(0);
 msg(m=='manual'?'Drag the 4 white dots onto the board corners, then tap “Lock border now”.':'Searching for the board… hold steady, all 4 corners in view. You can also drag the dots yourself.')}
 function extOut(){const H=hom([[0,0],[8,0],[8,8],[0,8]],rq());return[[-1,-1],[9,-1],[9,9],[-1,9]].some(p=>{const[x,y]=ap(H,p[0],p[1]);return x<0||y<0||x>O.width||y>O.height})}
-function lock(a){if(!quad||!stream)return;mode='rec';if(!game)newGame();resetTracking();st(1,'locked ✓','ok');st(2,'refining photo…');st(3,'verifying position…');st(4,'waiting');prog(.4);$('modelStatus').textContent='Photo occupancy: checking the starting position';msg($('labAuto').checked?'Border locked. Keep hands away while the starting photo is verified.':'Border locked. Tap Capture & Analyze now to verify the starting position.');a?foundSnd():beep(660,.12,.45);}
+function lock(a){if(!quad||!stream)return;mode='rec';videoButtons();if(!game)newGame();resetTracking();st(1,'locked ✓','ok');st(2,'refining photo…');st(3,'verifying position…');st(4,'waiting');prog(.4);$('modelStatus').textContent='Photo occupancy: checking the starting position';msg($('labAuto').checked?'Border locked. Keep hands away while the starting photo is verified.':'Border locked. Tap Capture & Analyze now to verify the starting position.');a?foundSnd():beep(660,.12,.45);}
 function detectByContours(){
  if(!(window.cv&&cv.Mat&&cv.findContours))return null;
  let src,gray,blur,edges,contours,hierarchy;
@@ -1062,6 +1063,118 @@ function updateFlash(){const track=stream?.getVideoTracks()[0];let supported=fal
 /* Independent camera-stream video recording (~1.6 Mb/s, 720p ideal).
    Record 2-second blobs and persist them to IndexedDB. Browsers cannot
    reliably auto-download during tab closure, so restore on next opening. */
+
+/* Dedicated board-only HD recorder, isolated from 640px move detection.
+   The existing locked corner quadrilateral drives a GPU projective warp.
+   No raw camera/background pixels are written to recorded footage. */
+const hdCanvas=$('videoBoardHD'),HD_SIDE=1280;
+let hdGL=null,hdProgram=null,hdTexture=null,hdUniforms=null;
+let hdRunning=false,hdRaf=0,hdLastFrame=0,hdError='';
+function hdSetup(){
+ if(hdGL)return true;
+ const gl=hdCanvas.getContext('webgl',{alpha:false,antialias:false,depth:false,stencil:false,preserveDrawingBuffer:true});
+ if(!gl){hdError='WebGL is unavailable; HD video requires a WebGL-capable browser.';return false;}
+ try{
+  const compile=(type,source)=>{
+   const sh=gl.createShader(type);gl.shaderSource(sh,source);gl.compileShader(sh);
+   if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(sh)||'Shader error');
+   return sh;
+  };
+  const vs=compile(gl.VERTEX_SHADER,'attribute vec2 p;void main(){gl_Position=vec4(p,0.0,1.0);}');
+  const fs=compile(gl.FRAGMENT_SHADER,[
+   'precision highp float;',
+   'uniform sampler2D t; uniform vec3 h0; uniform vec3 h1; uniform vec2 h2; uniform float size;',
+   'void main(){',
+   'vec2 xy=vec2(gl_FragCoord.x/size,1.0-gl_FragCoord.y/size);',
+   'vec3 uv=vec3(xy,1.0);float den=dot(h2,xy)+1.0;',
+   'vec2 src=vec2(dot(h0,uv),dot(h1,uv))/den;',
+   'if(den<=0.0||src.x<0.0||src.x>1.0||src.y<0.0||src.y>1.0)gl_FragColor=vec4(0.,0.,0.,1.);',
+   'else gl_FragColor=texture2D(t,vec2(src.x,1.0-src.y));}'
+  ].join(' '));
+  const prog=gl.createProgram();gl.attachShader(prog,vs);gl.attachShader(prog,fs);gl.linkProgram(prog);
+  if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(prog)||'Shader program error');
+  gl.useProgram(prog);
+  const quadBuf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,quadBuf);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+  const a=gl.getAttribLocation(prog,'p');gl.enableVertexAttribArray(a);gl.vertexAttribPointer(a,2,gl.FLOAT,false,0,0);
+  const tex=gl.createTexture();gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,tex);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+  gl.uniform1i(gl.getUniformLocation(prog,'t'),0);
+  gl.uniform1f(gl.getUniformLocation(prog,'size'),HD_SIDE);
+  hdGL=gl;hdProgram=prog;hdTexture=tex;
+  hdUniforms=[gl.getUniformLocation(prog,'h0'),gl.getUniformLocation(prog,'h1'),gl.getUniformLocation(prog,'h2')];
+  hdCanvas.addEventListener('webglcontextlost',e=>{
+   e.preventDefault();hdGL=null;hdProgram=null;hdTexture=null;
+   hdError='HD graphics context lost. Stop and restart recording.';
+   videoText(hdError);
+  });
+  return true;
+ }catch(e){hdError='HD graphics setup failed: '+e.message;return false;}
+}
+function hdFrame(){
+ if(!quad||!stream?.active||V.readyState<2||!V.videoWidth||!V.videoHeight)return false;
+ if(!hdSetup())return false;
+ const pts=rq().map(([x,y])=>[x/V.videoWidth,y/V.videoHeight]);
+ if(pts.some(p=>p.some(v=>!Number.isFinite(v)||v<0||v>1))){
+  hdError='Board corners must be inside the camera image.';return false;
+ }
+ const H=Logic.homography(pts);
+ if(H.some(x=>!Number.isFinite(x))){hdError='Invalid board perspective.';return false;}
+ const gl=hdGL;
+ try{
+  gl.viewport(0,0,HD_SIDE,HD_SIDE);gl.useProgram(hdProgram);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,hdTexture);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,V);
+  gl.uniform3f(hdUniforms[0],H[0],H[1],H[2]);
+  gl.uniform3f(hdUniforms[1],H[3],H[4],H[5]);
+  gl.uniform2f(hdUniforms[2],H[6],H[7]);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);gl.flush();
+  hdError='';return true;
+ }catch(e){hdError='HD board rendering failed: '+e.message;return false;}
+}
+function hdLoop(t){
+ if(!hdRunning)return;
+ if(t-hdLastFrame>=40){hdLastFrame=t;hdFrame();}
+ hdRaf=requestAnimationFrame(hdLoop);
+}
+function hdBegin(){
+ if(!hdFrame())return false;
+ hdRunning=true;hdLastFrame=0;hdCanvas.style.display='block';
+ if(!hdRaf)hdRaf=requestAnimationFrame(hdLoop);
+ return true;
+}
+function hdEnd(){
+ hdRunning=false;
+ if(hdRaf)cancelAnimationFrame(hdRaf);
+ hdRaf=0;hdCanvas.style.display='none';
+}
+async function hdPhoto(){
+ if(!stream?.active||!quad||mode!=='rec'){videoText('First detect and lock the chessboard.');return;}
+ const b=$('videoHDPhoto');b.disabled=true;
+ try{
+  let blob=null;
+  if(hdFrame())blob=await new Promise(resolve=>hdCanvas.toBlob(resolve,'image/jpeg',0.95));
+  else{
+   // Single still works even if the device lacks a WebGL implementation.
+   const rgba=labPhoto(HD_SIDE,true);
+   if(!rgba)throw Error(hdError||'Could not straighten the board.');
+   const canvas=document.createElement('canvas');canvas.width=canvas.height=HD_SIDE;
+   canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(rgba),HD_SIDE,HD_SIDE),0,0);
+   blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',0.95));
+  }
+  if(!blob?.size)throw Error('JPEG capture did not produce an image.');
+  const stamp=new Date().toISOString().replace(/[:.]/g,'-');
+  videoSave(blob,'Zen-HD-Board-'+stamp+'.jpg');
+  videoText('Saved HD 1280×1280 processed board photograph.');
+ }catch(e){videoText('HD photo failed: '+e.message);}
+ finally{b.disabled=false;}
+}
+$('videoHDPhoto').onclick=hdPhoto;
+
 const videoDBName='zen-camera-lab-video-v1';
 let videoDBPromise=null,videoSession=null;
 function videoText(s){$('videoStatus').textContent=s;}
@@ -1119,9 +1232,9 @@ function videoSave(blob,file){
 }
 function videoButtons(){
  const running=videoSession?.recorder?.state==='recording';
- $('videoStart').disabled=!!running||!stream||!stream.active;
+ $('videoStart').disabled=!!running||!stream||!stream.active||mode!=='rec'||!quad;
  $('videoStop').disabled=!running;
- $('videoStart').textContent=running?'● Recording…':'● Start video';
+ $('videoStart').textContent=running?'● Recording HD board…':'● Record HD board';
 }
 async function videoRefresh(){
  try{
@@ -1143,6 +1256,7 @@ async function videoRecover(){
 }
 async function videoStart(){
  if(!stream||!stream.active){videoText('Start the camera first.');return;}
+ if(!quad||mode!=='rec'){videoText('Detect and LOCK the chessboard before starting the HD recorder.');return;}
  if(videoSession?.recorder?.state==='recording')return;
  if(!window.MediaRecorder){videoText('This browser does not support video recording.');return;}
  const formats=['video/webm;codecs=vp8','video/webm','video/mp4'];
@@ -1151,10 +1265,14 @@ async function videoStart(){
  let stored=true;
  try{await videoPut('sessions',{id,started,mime:mime||'video/webm',state:'recording'});}
  catch(e){stored=false;}
- let recorder;
- try{recorder=new MediaRecorder(stream,mime?{mimeType:mime,videoBitsPerSecond:1600000}:{videoBitsPerSecond:1600000});}
- catch(e){videoText('Could not start recording: '+e.message);return;}
- const session={id,started,mime:recorder.mimeType||mime||'video/webm',recorder,chunks:[],write:Promise.resolve(),stored,index:0,stopPromise:null};
+ if(!hdBegin()){videoText(hdError||'Cannot capture processed board video.');return;}
+ let capture,recorder;
+ try{
+  if(!hdCanvas.captureStream)throw Error('Canvas capture is not supported by this browser.');
+  capture=hdCanvas.captureStream(24);
+  recorder=new MediaRecorder(capture,mime?{mimeType:mime,videoBitsPerSecond:6000000}:{videoBitsPerSecond:6000000});
+ }catch(e){hdEnd();capture?.getTracks().forEach(t=>t.stop());videoText('Cannot record HD board: '+e.message);return;}
+ const session={id,started,mime:recorder.mimeType||mime||'video/webm',recorder,capture,chunks:[],write:Promise.resolve(),stored,index:0,stopPromise:null};
  videoSession=session;
  recorder.ondataavailable=e=>{
   if(!e.data?.size)return;
@@ -1174,12 +1292,13 @@ async function videoStart(){
    videoSave(blob,videoFile(session.mime,started));
    videoText('Video stopped and saved ('+(blob.size/1048576).toFixed(1)+' MB).'+(session.stored?' Recovery copy retained.':''));
   }catch(e){videoText('Video stopped. Download unavailable: '+e.message+'. Try Save previous video.');}
+  hdEnd();session.capture?.getTracks().forEach(t=>t.stop());
   if(videoSession===session)videoSession=null;
   videoButtons();videoRefresh();
   session.resolveStop?.();
  };
- try{recorder.start(2000);videoText('● Recording camera video at normal quality.'+(stored?' Recovery copy stored automatically.':' Backup storage unavailable; stop to save.'));}
- catch(e){videoSession=null;videoText('Video could not start: '+e.message);}
+ try{recorder.start(2000);videoText('● Recording HD 1280×1280, straightened chessboard ONLY (target 24 fps).'+(stored?' Recovery chunks are backed up.':' Stop & Save before closing; backup unavailable.'));}
+ catch(e){hdEnd();capture?.getTracks().forEach(t=>t.stop());videoSession=null;videoText('HD board recording failed: '+e.message);}
  videoButtons();
 }
 function videoStop(){
@@ -1212,7 +1331,7 @@ async function cam(){cancelPromotion();if(cameraBusy)return;cameraBusy=true;cons
  if(oldStream&&videoSession)await videoStop();
  // Stop the previous camera before opening another; some phones cannot stream two cameras.
  if(oldStream){oldStream.getTracks().forEach(t=>t.stop());stream=null;V.srcObject=null}
- const constraints={width:{ideal:1280},height:{ideal:720}};
+ const constraints={width:{ideal:1920},height:{ideal:1080}};
  if(selectedCamera)constraints.deviceId={exact:selectedCamera};else constraints.facingMode={ideal:facing};
  try{stream=await navigator.mediaDevices.getUserMedia({video:constraints,audio:false})}
  catch(e){if(!selectedCamera)throw e;selectedCamera='';stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:facing}},audio:false})}
