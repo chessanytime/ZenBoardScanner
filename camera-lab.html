@@ -1835,13 +1835,12 @@ function labAnalyze(forceBaseline=false,manual=false,oneShotSimple=false){
   if(simpleReady&&simpleMode==='only'){
    if(simpleStable)labTrySimple(p,fp,now,false,true);
    else labUI('Pixel-only: waiting for the photograph to become stable.');
-  }else if(simpleReady&&simpleMode==='fallback'&&simpleStable&&labTrySimple(p,fp,now,false))return;
-  else labUI('Board change detected · waiting for a stable photo.');
+  }else labUI('Board change detected · waiting for a stable photo.');
   return;
  }
  if(!manual&&simpleReady&&simpleMode==='only'&&!simpleStable){labUI('Pixel-only: waiting for a stable photo.');return;}
  if(!manual&&now-labObservationSince<Math.max(300,Number($('labDelay').value)||500)&&!(simpleReady&&simpleMode==='only')){
-  if(simpleReady&&simpleMode==='fallback'&&simpleStable)labTrySimple(p,fp,now,false);
+  // Original occupancy gets its full stability delay before fallback.
   return;
  }
  if(forceBaseline||!labReference||labFen!==game.fen()){
