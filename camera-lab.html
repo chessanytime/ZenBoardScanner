@@ -1319,7 +1319,9 @@ async function cam(){cancelPromotion();if(cameraBusy)return;cameraBusy=true;cons
  if(oldStream&&videoSession)await videoStop();
  // Stop the previous camera before opening another; some phones cannot stream two cameras.
  if(oldStream){oldStream.getTracks().forEach(t=>t.stop());stream=null;V.srcObject=null}
- const constraints={width:{ideal:1920},height:{ideal:1080}};
+ // Original working camera acquisition resolution. HD exports are
+ // rectified separately; do not alter the board detector's camera mode.
+ const constraints={width:{ideal:1280},height:{ideal:720}};
  if(selectedCamera)constraints.deviceId={exact:selectedCamera};else constraints.facingMode={ideal:facing};
  try{stream=await navigator.mediaDevices.getUserMedia({video:constraints,audio:false})}
  catch(e){if(!selectedCamera)throw e;selectedCamera='';stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:facing}},audio:false})}
