@@ -1261,10 +1261,6 @@ async function videoStart(){
  if(!window.MediaRecorder){videoText('This browser does not support video recording.');return;}
  const formats=['video/webm;codecs=vp8','video/webm','video/mp4'];
  const mime=formats.find(x=>MediaRecorder.isTypeSupported(x))||'';
- const started=Date.now(),id=started+'-'+Math.random().toString(36).slice(2,9);
- let stored=true;
- try{await videoPut('sessions',{id,started,mime:mime||'video/webm',state:'recording'});}
- catch(e){stored=false;}
  if(!hdBegin()){videoText(hdError||'Cannot capture processed board video.');return;}
  let capture,recorder;
  try{
@@ -1272,6 +1268,10 @@ async function videoStart(){
   capture=hdCanvas.captureStream(24);
   recorder=new MediaRecorder(capture,mime?{mimeType:mime,videoBitsPerSecond:6000000}:{videoBitsPerSecond:6000000});
  }catch(e){hdEnd();capture?.getTracks().forEach(t=>t.stop());videoText('Cannot record HD board: '+e.message);return;}
+ const started=Date.now(),id=started+'-'+Math.random().toString(36).slice(2,9);
+ let stored=true;
+ try{await videoPut('sessions',{id,started,mime:recorder.mimeType||mime||'video/webm',state:'recording'});}
+ catch(e){stored=false;}
  const session={id,started,mime:recorder.mimeType||mime||'video/webm',recorder,capture,chunks:[],write:Promise.resolve(),stored,index:0,stopPromise:null};
  videoSession=session;
  recorder.ondataavailable=e=>{
